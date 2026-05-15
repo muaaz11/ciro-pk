@@ -1,0 +1,110 @@
+[
+    {
+        "id": "S001",
+        "text": "Meri ammi ko garmi mein chakkar aa gaye Nazimabad mein, koi help karo please ambulance chahiye",
+        "location_mentioned": "Nazimabad",
+        "signal_type": "request_for_help",
+        "timestamp": "2025-06-15T11:23:00Z",
+        "source": "twitter",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S002",
+        "text": "3 people collapsed near Gulshan chowrangi, ambulance needed urgently, extreme heat",
+        "location_mentioned": "Gulshan-e-Iqbal",
+        "signal_type": "heatstroke_case",
+        "timestamp": "2025-06-15T11:31:00Z",
+        "source": "twitter",
+        "language": "english"
+    },
+    {
+        "id": "S003",
+        "text": "FB area mein garmi se bura haal hai, paani bhi nahi aa raha 2 din se, log behosh ho rahe hain",
+        "location_mentioned": "FB Area",
+        "signal_type": "heat_complaint",
+        "timestamp": "2025-06-15T11:45:00Z",
+        "source": "whatsapp_forward",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S004",
+        "text": "گلشن اقبال بلاک 7 میں ایک بزرگ شخص گرمی کی وجہ سے سڑک پر گر پڑے، فوری مدد چاہیے",
+        "location_mentioned": "Gulshan-e-Iqbal",
+        "signal_type": "heatstroke_case",
+        "timestamp": "2025-06-15T11:52:00Z",
+        "source": "twitter",
+        "language": "urdu"
+    },
+    {
+        "id": "S005",
+        "text": "Korangi mein factory workers heatstroke ka shikaar ho rahe hain, 5 log hospital le gaye abhi",
+        "location_mentioned": "Korangi",
+        "signal_type": "heatstroke_case",
+        "timestamp": "2025-06-15T12:01:00Z",
+        "source": "twitter",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S006",
+        "text": "URGENT: Multiple heatstroke victims reported at Landhi bus stop, no shade available, temperature unbearable",
+        "location_mentioned": "Landhi",
+        "signal_type": "request_for_help",
+        "timestamp": "2025-06-15T12:08:00Z",
+        "source": "twitter",
+        "language": "english"
+    },
+    {
+        "id": "S007",
+        "text": "North Karachi mein bijli 6 ghante se nahi hai aur garmi 45 degree se upar hai, bacho ka bura haal hai",
+        "location_mentioned": "North Karachi",
+        "signal_type": "heat_complaint",
+        "timestamp": "2025-06-15T12:15:00Z",
+        "source": "whatsapp_forward",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S008",
+        "text": "Civil Hospital emergency mein heatstroke cases ki line lagi hui hai, capacity full ho gayi hai",
+        "location_mentioned": "Saddar",
+        "signal_type": "heatstroke_case",
+        "timestamp": "2025-06-15T12:22:00Z",
+        "source": "twitter",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S009",
+        "text": "ناظم آباد میں پانی کی سپلائی بند ہے اور گرمی میں لوگ پریشان ہیں، کوئی سنتا نہیں",
+        "location_mentioned": "Nazimabad",
+        "signal_type": "heat_complaint",
+        "timestamp": "2025-06-15T12:29:00Z",
+        "source": "twitter",
+        "language": "urdu"
+    },
+    {
+        "id": "S010",
+        "text": "Elderly woman found unconscious due to heat at Gulshan Block 3, called 1122 but no response yet",
+        "location_mentioned": "Gulshan-e-Iqbal",
+        "signal_type": "request_for_help",
+        "timestamp": "2025-06-15T12:35:00Z",
+        "source": "twitter",
+        "language": "english"
+    },
+    {
+        "id": "S011",
+        "text": "FB area block 10 mein 2 baache heat exhaustion se hospital pohanch gaye, parents pareshan hain, koi cooling center nahi yahan",
+        "location_mentioned": "FB Area",
+        "signal_type": "heatstroke_case",
+        "timestamp": "2025-06-15T12:41:00Z",
+        "source": "whatsapp_forward",
+        "language": "roman_urdu"
+    },
+    {
+        "id": "S012",
+        "text": "Korangi crossing pe outdoor workers road pe kaam kar rahe hain 44 degree mein, koi pani nahi, yeh zulm hai",
+        "location_mentioned": "Korangi",
+        "signal_type": "heat_complaint",
+        "timestamp": "2025-06-15T12:48:00Z",
+        "source": "twitter",
+        "language": "roman_urdu"
+    }
+]
