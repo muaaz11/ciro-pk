@@ -1,15 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function runDetectionAgent(signals, weatherData, currentTime) {
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-pro',
-    systemInstruction: "You are a crisis detection specialist for Karachi, Pakistan. You analyze social media signals and weather data to detect heatwave health emergencies. You understand Urdu, Roman Urdu, and English. You never use fixed rules — you reason from evidence. Always return valid JSON only."
-  });
-
   const prompt = `
 Current Time: ${currentTime}
 
@@ -19,7 +14,7 @@ ${JSON.stringify(weatherData, null, 2)}
 Social Media Signals:
 ${JSON.stringify(signals, null, 2)}
 
-Analyze all inputs together and return this exact JSON structure:
+Analyze all inputs together and return this exact JSON structure with no extra text, no markdown, no backticks:
 {
   "crisis_detected": boolean,
   "crisis_type": "heatwave",
@@ -32,12 +27,13 @@ Analyze all inputs together and return this exact JSON structure:
 }
 `;
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    system: "You are a crisis detection specialist for Karachi, Pakistan. You analyze social media signals and weather data to detect heatwave health emergencies. You understand Urdu, Roman Urdu, and English. You never use fixed rules — you reason from evidence. Always return valid JSON only. No markdown, no backticks, no extra text.",
+    messages: [{ role: 'user', content: prompt }]
   });
 
-  return JSON.parse(result.response.text());
+  const text = response.content[0].text;
+  return JSON.parse(text);
 }

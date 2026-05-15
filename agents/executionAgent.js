@@ -1,16 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function runExecutionAgent(responsePlan, hospitals, coolingCenters) {
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-pro',
-    // System instruction isn't strictly requested by user for this agent, but helps set context
-    systemInstruction: "You are an automated crisis execution system. You take a response plan, simulate the actions on the given resources, log them, and output the updated resources and an incident report. Always return valid JSON only."
-  });
-
   const prompt = `
 Response Plan:
 ${JSON.stringify(responsePlan, null, 2)}
@@ -23,7 +17,7 @@ ${JSON.stringify(coolingCenters, null, 2)}
 
 Simulate the execution of each action. Update hospital bed counts and cooling center occupancies accordingly. Generate formatted alert messages and create an incident report.
 
-Return this EXACT JSON structure:
+Return this EXACT JSON structure with no extra text, no markdown, no backticks:
 {
   "execution_log": [
     {
@@ -43,18 +37,19 @@ Return this EXACT JSON structure:
     "status": "ACTIVE" | "RESOLVING" | "RESOLVED"
   },
   "updated_resources": {
-    "hospitals": [ updated hospital array... ],
-    "cooling_centers": [ updated cooling centers array... ]
+    "hospitals": [ updated hospital array ],
+    "cooling_centers": [ updated cooling centers array ]
   }
 }
 `;
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: "You are an automated crisis execution system. You take a response plan, simulate the actions on the given resources, log them, and output the updated resources and an incident report. Always return valid JSON only. No markdown, no backticks, no extra text.",
+    messages: [{ role: 'user', content: prompt }]
   });
 
-  return JSON.parse(result.response.text());
+  const text = response.content[0].text;
+  return JSON.parse(text);
 }
