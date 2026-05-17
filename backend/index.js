@@ -36,6 +36,11 @@ io.on('connection', (socket) => {
     orchestrator.acceptDispatch();
   });
 
+  socket.on('get_active_dispatch', () => {
+    console.log('Client requested active dispatch state');
+    orchestrator.syncActiveDispatch(socket);
+  });
+
   socket.on('disconnect', () => console.log('Frontend disconnected:', socket.id));
 });
 

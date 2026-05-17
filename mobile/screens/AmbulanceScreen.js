@@ -35,7 +35,10 @@ export default function AmbulanceScreen({ navigation }) {
     const socket = io(app_url);
     socketRef.current = socket;
 
-    socket.on('connect', () => console.log('Driver connected to socket'));
+    socket.on('connect', () => {
+      console.log('Driver connected to socket');
+      socket.emit('get_active_dispatch');
+    });
 
     socket.on('agent_status', ({ agent, status, data }) => {
       if (agent === 'Planning' && status === 'thinking') {
@@ -75,22 +78,6 @@ export default function AmbulanceScreen({ navigation }) {
           currentPos: ambulance_position
         };
       });
-
-      if (progress < 40) {
-        setDriverStatus('ASSIGNED');
-      } else if (progress >= 40 && progress < 70) {
-        setDriverStatus('AT_INCIDENT');
-      } else if (progress >= 70 && progress < 100) {
-        setDriverStatus('EN_ROUTE_HOSPITAL');
-      } else if (progress === 100) {
-        setDriverStatus('COMPLETED');
-        // Clear active job after a brief delay to reset driver terminal back to idle
-        setTimeout(() => {
-          setActiveJob(null);
-          setPendingJob(null);
-          setDriverStatus('IDLE');
-        }, 6000);
-      }
     });
 
     return () => socket.disconnect();
@@ -113,6 +100,18 @@ export default function AmbulanceScreen({ navigation }) {
 
   const handleStatusPress = (status) => {
     setDriverStatus(status);
+    if (status === 'COMPLETED') {
+      Alert.alert(
+        "Mission Completed!",
+        "Ambulance reported delivered. All victims successfully checked in at Aga Khan University Hospital. Resetting terminal to Standby.",
+        [{ text: "OK" }]
+      );
+      setTimeout(() => {
+        setActiveJob(null);
+        setPendingJob(null);
+        setDriverStatus('IDLE');
+      }, 4000); // 4-second delay to show final standby transition
+    }
   };
 
   return (

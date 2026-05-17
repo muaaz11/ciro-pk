@@ -73,6 +73,14 @@ export class Orchestrator {
     this.isProcessing = false;
     this.simulationEngine = new SimulationEngine(io);
     this.resolveDriverAcceptance = null;
+    this.activePlan = null;
+  }
+
+  syncActiveDispatch(socket) {
+    if (this.activePlan && this.resolveDriverAcceptance) {
+      console.log('Syncing active dispatch plan with newly connected socket:', socket.id);
+      socket.emit('agent_status', { agent: 'Ambulance', status: 'waiting_acceptance', data: this.activePlan });
+    }
   }
 
   acceptDispatch() {
@@ -175,12 +183,14 @@ export class Orchestrator {
         this.io.emit('agent_status', { agent: 'Planning', status: 'completed', data: plan });
 
         // WAIT FOR DRIVER TO ACCEPT DISPATCH (blocks execution flow)
+        this.activePlan = plan;
         this.io.emit('agent_status', { agent: 'Ambulance', status: 'waiting_acceptance', data: plan });
         console.log("Blocking execution, waiting for driver acceptance...");
         await new Promise((resolve) => {
           this.resolveDriverAcceptance = resolve;
         });
         console.log("Driver accepted dispatch! Resuming execution workflow...");
+        this.activePlan = null;
 
         this.io.emit('agent_status', { agent: 'Ambulance', status: 'accepted' });
         await new Promise(r => setTimeout(r, 3000)); // Deliberate delay to show user dispatch confirmation
