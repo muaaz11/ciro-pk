@@ -4,10 +4,48 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Incident {
+  id                       String   @id @default(uuid())
+  report_id                String
+  crisis_summary           String
+  actions_taken            Int
+  estimated_lives_impacted Int
+  status                   String
+  created_at               DateTime @default(now())
+
+  action_logs ActionLog[]
+  signals     Signal[]
+}
+
+model ActionLog {
+  id               String   @id @default(uuid())
+  action_id        String
+  status           String
+  result           String
+  simulated_impact String?
+  timestamp        DateTime @default(now())
+
+  incident_id String
+  incident    Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+}
+
+model Signal {
+  id                 String   @id @default(uuid())
+  text               String
+  location_mentioned String
+  signal_type        String
+  source             String
+  language           String?
+  timestamp          DateTime @default(now())
+
+  incident_id String?
+  incident    Incident? @relation(fields: [incident_id], references: [id], onDelete: SetNull)
 }

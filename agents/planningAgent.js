@@ -1,15 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function runPlanningAgent(crisisAssessment, hospitals, coolingCenters) {
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-pro',
-    systemInstruction: "You are an emergency health response coordinator for Karachi. Given a crisis assessment and resource availability, you create the most effective response plan. You do hospital load balancing — directing cases to hospitals with available capacity. Always return valid JSON only."
-  });
-
   const prompt = `
 Crisis Assessment:
 ${JSON.stringify(crisisAssessment, null, 2)}
@@ -20,7 +15,7 @@ ${JSON.stringify(hospitals, null, 2)}
 Cooling Centers:
 ${JSON.stringify(coolingCenters, null, 2)}
 
-Create the most effective response plan and return this exact JSON structure:
+Create the most effective response plan and return this exact JSON structure with no extra text, no markdown, no backticks:
 {
   "response_plan": {
     "priority": "IMMEDIATE" | "URGENT" | "MODERATE",
@@ -46,12 +41,13 @@ Create the most effective response plan and return this exact JSON structure:
 }
 `;
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-    }
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2048,
+    system: "You are an emergency health response coordinator for Karachi. Given a crisis assessment and resource availability, you create the most effective response plan. You do hospital load balancing — directing cases to hospitals with available capacity. Always return valid JSON only. No markdown, no backticks, no extra text.",
+    messages: [{ role: 'user', content: prompt }]
   });
 
-  return JSON.parse(result.response.text());
+  const text = response.content[0].text;
+  return JSON.parse(text);
 }
