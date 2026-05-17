@@ -1,55 +1,50 @@
-import Anthropic from '@anthropic-ai/sdk';
-import dotenv from 'dotenv';
-dotenv.config();
+import Groq from 'groq-sdk'
+import dotenv from 'dotenv'
+dotenv.config()
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
 export async function runExecutionAgent(responsePlan, hospitals, coolingCenters) {
   const prompt = `
-Response Plan:
-${JSON.stringify(responsePlan, null, 2)}
+Response Plan: ${JSON.stringify(responsePlan, null, 2)}
+Current Hospitals: ${JSON.stringify(hospitals, null, 2)}
+Current Cooling Centers: ${JSON.stringify(coolingCenters, null, 2)}
 
-Current Hospitals:
-${JSON.stringify(hospitals, null, 2)}
-
-Current Cooling Centers:
-${JSON.stringify(coolingCenters, null, 2)}
-
-Simulate the execution of each action. Update hospital bed counts and cooling center occupancies accordingly. Generate formatted alert messages and create an incident report.
-
-Return this EXACT JSON structure with no extra text, no markdown, no backticks:
+Simulate execution of each action. Return ONLY this JSON, no extra text:
 {
   "execution_log": [
     {
       "action_id": "A1",
       "status": "EXECUTED",
-      "timestamp": "ISO timestamp",
+      "timestamp": "2025-06-15T12:00:00Z",
       "result": "what happened",
-      "simulated_impact": "estimated people helped"
+      "simulated_impact": "people helped"
     }
   ],
   "incident_report": {
-    "report_id": "KHI-YYYY-XXXX",
-    "created_at": "timestamp",
+    "report_id": "KHI-2025-0001",
+    "created_at": "2025-06-15T12:00:00Z",
     "crisis_summary": "brief summary",
-    "actions_taken": number,
-    "estimated_lives_impacted": number,
-    "status": "ACTIVE" | "RESOLVING" | "RESOLVED"
+    "actions_taken": 3,
+    "estimated_lives_impacted": 150,
+    "status": "ACTIVE"
   },
   "updated_resources": {
-    "hospitals": [ updated hospital array ],
-    "cooling_centers": [ updated cooling centers array ]
+    "hospitals": [],
+    "cooling_centers": []
   }
-}
-`;
+}`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: "You are an automated crisis execution system. You take a response plan, simulate the actions on the given resources, log them, and output the updated resources and an incident report. Always return valid JSON only. No markdown, no backticks, no extra text.",
-    messages: [{ role: 'user', content: prompt }]
-  });
+  const response = await client.chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      { role: 'system', content: 'You are an automated crisis execution system. Always return valid JSON only. No markdown, no backticks.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.3
+  })
 
-  const text = response.content[0].text;
-  return JSON.parse(text);
+  const text = response.choices[0].message.content
+  const clean = text.replace(/```json|```/g, '').trim()
+  return JSON.parse(clean)
 }

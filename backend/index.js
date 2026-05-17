@@ -3,13 +3,11 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import path from 'path';
-import { prisma } from './database.js';
+import { pool } from './database.js';
 import { fileURLToPath } from 'url';
-
-// Agents
-import { runDetectionAgent } from '../agents/detectionAgent.js';
-import { runPlanningAgent } from '../agents/planningAgent.js';
-import { runExecutionAgent } from '../agents/executionAgent.js';
+import http from 'http';
+import { Server } from 'socket.io';
+import { Orchestrator } from './services/orchestrator.js';
 
 dotenv.config();
 
@@ -18,11 +16,28 @@ const __dirname = path.dirname(__filename);
 const dataPath = path.join(__dirname, '../data');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
 
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
+
+const orchestrator = new Orchestrator(io);
+
+io.on('connection', (socket) => {
+  console.log('Frontend connected:', socket.id);
+  
+  socket.on('accept_dispatch', () => {
+    console.log('Driver accepted dispatch event received');
+    orchestrator.acceptDispatch();
+  });
+
+  socket.on('disconnect', () => console.log('Frontend disconnected:', socket.id));
+});
 
 async function readDataFile(filename) {
   try {
@@ -36,81 +51,40 @@ async function readDataFile(filename) {
 }
 
 // 1. POST /api/crisis/analyze
+// Replaced by orchestrated flow, but kept for legacy/direct triggering if needed
 app.post('/api/crisis/analyze', async (req, res, next) => {
   try {
     const { signals, weather_data } = req.body;
-
-    // Read current resources
-    const hospitals = await readDataFile('hospital.json');
-    const coolingCenters = await readDataFile('cooling_centers.json');
-
-    const currentTime = new Date().toISOString();
-
-    // Step 1: Detection
-    const detectionResult = await runDetectionAgent(signals, weather_data, currentTime);
-
-    // Step 2: Planning
-    let planningResult = null;
-    let executionResult = null;
-    let newIncident = null;
-
-    if (detectionResult.crisis_detected) {
-      planningResult = await runPlanningAgent(detectionResult, hospitals, coolingCenters);
-
-      // Step 3: Execution
-      executionResult = await runExecutionAgent(planningResult, hospitals, coolingCenters);
-
-      // Save to Neon DB using Prisma
-      const incidentReport = executionResult.incident_report || {};
-      const actionLogArray = executionResult.execution_log || [];
-
-      newIncident = await prisma.incident.create({
-        data: {
-          report_id: incidentReport.report_id || `KHI-${Date.now()}`,
-          crisis_summary: incidentReport.crisis_summary || 'Unknown crisis summary',
-          actions_taken: incidentReport.actions_taken || actionLogArray.length || 0,
-          estimated_lives_impacted: incidentReport.estimated_lives_impacted || 0,
-          status: incidentReport.status || 'ACTIVE',
-          action_logs: {
-            create: actionLogArray.map(log => ({
-              action_id: log.action_id || 'A_UNK',
-              status: log.status || 'UNKNOWN',
-              result: log.result || 'No result provided',
-              simulated_impact: String(log.simulated_impact) || '0',
-              timestamp: log.timestamp ? new Date(log.timestamp) : new Date()
-            }))
-          },
-          // Associate passed signals with this incident
-          signals: {
-            create: signals && Array.isArray(signals) ? signals.map(sig => ({
-              text: sig.text || '',
-              location_mentioned: sig.location_mentioned || 'Unknown',
-              signal_type: sig.signal_type || 'unknown',
-              source: sig.source || 'unknown',
-              language: sig.language || 'unknown',
-              timestamp: sig.timestamp ? new Date(sig.timestamp) : new Date()
-            })) : []
-          }
-        }
-      });
-
-      // Simulate persistence of updated resources to mock data file
-      if (executionResult.updated_resources) {
-        if (executionResult.updated_resources.hospitals) {
-          await fs.writeFile(path.join(dataPath, 'hospital.json'), JSON.stringify(executionResult.updated_resources.hospitals, null, 4));
-        }
-        if (executionResult.updated_resources.cooling_centers) {
-          await fs.writeFile(path.join(dataPath, 'cooling_centers.json'), JSON.stringify(executionResult.updated_resources.cooling_centers, null, 4));
-        }
+    // Push directly to orchestrator
+    if (signals && Array.isArray(signals)) {
+      for (const sig of signals) {
+        orchestrator.handleNewSignal(sig);
       }
     }
+    res.json({ message: 'Analysis triggered via Orchestrator' });
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json({
-      detection: detectionResult,
-      planning: planningResult,
-      execution: executionResult,
-      db_incident: newIncident
-    });
+// 1.5 GET /api/weather/current
+app.get('/api/weather/current', async (req, res, next) => {
+  try {
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'Missing OpenWeather API Key' });
+
+    const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Karachi&units=metric&appid=${apiKey}`);
+    if (weatherRes.ok) {
+      const weatherData = await weatherRes.json();
+      res.json({
+        temperature_celsius: Math.round(weatherData.main.temp),
+        feels_like: Math.round(weatherData.main.feels_like),
+        description: weatherData.weather[0].main.toUpperCase(),
+        humidity_percent: weatherData.main.humidity
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to fetch weather from OpenWeather' });
+    }
   } catch (error) {
     next(error);
   }
@@ -139,50 +113,44 @@ app.get('/api/cooling-centers', async (req, res, next) => {
 // 4. GET /api/incidents
 app.get('/api/incidents', async (req, res, next) => {
   try {
-    const incidents = await prisma.incident.findMany({
-      orderBy: { created_at: 'desc' }
-    });
-    res.json(incidents);
+    const result = await pool.query('SELECT * FROM "Incident" ORDER BY created_at DESC');
+    res.json(result.rows);
   } catch (error) {
     next(error);
   }
 });
 
-// 5. GET /api/incidents/:id
 app.get('/api/incidents/:id', async (req, res, next) => {
   try {
-    const incident = await prisma.incident.findUnique({
-      where: { id: req.params.id },
-      include: {
-        action_logs: true,
-        signals: true
-      }
-    });
-    if (!incident) {
+    const result = await pool.query(
+      'SELECT * FROM "Incident" WHERE id = $1',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Incident not found' });
     }
+
+    const logsRes = await pool.query('SELECT * FROM "ActionLog" WHERE incident_id = $1 ORDER BY timestamp ASC', [req.params.id]);
+    const signalsRes = await pool.query('SELECT * FROM "Signal" WHERE incident_id = $1 ORDER BY timestamp ASC', [req.params.id]);
+
+    const incident = result.rows[0];
+    incident.action_logs = logsRes.rows;
+    incident.signals = signalsRes.rows;
+
     res.json(incident);
   } catch (error) {
     next(error);
   }
 });
 
-// 6. POST /api/signals/inject
 app.post('/api/signals/inject', async (req, res, next) => {
   try {
-    const { text, location_mentioned, signal_type, source, language } = req.body;
+    const { text, location_mentioned, signal_type, source, language, mock_temperature, latitude, longitude } = req.body;
 
-    const newSignal = await prisma.signal.create({
-      data: {
-        text,
-        location_mentioned: location_mentioned || 'Unknown',
-        signal_type: signal_type || 'manual_injection',
-        source: source || 'app_demo',
-        language: language || 'unknown'
-      }
-    });
+    // Pass to orchestrator for real-time processing
+    orchestrator.handleNewSignal({ text, location_mentioned, signal_type, source, language, mock_temperature, latitude, longitude });
 
-    res.json({ message: 'Signal injected successfully', signal: newSignal });
+    res.json({ message: 'Signal injected and passed to Orchestrator' });
   } catch (error) {
     next(error);
   }
@@ -194,6 +162,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error', message: err.message });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server (with Orchestrator & Socket.io) running on port ${PORT}`);
 });

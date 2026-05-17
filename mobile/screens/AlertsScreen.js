@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { app_url } from '../url';
 
-const API_URL = 'http://localhost:3000'; // Change to 10.0.2.2 for android emulator
-
 export default function AlertsScreen() {
   const [incidents, setIncidents] = useState([]);
 
   useEffect(() => {
     fetchIncidents();
-    const interval = setInterval(fetchIncidents, 30000); // 30s refresh
+    const interval = setInterval(fetchIncidents, 30000);
     return () => clearInterval(interval);
   }, []);
 

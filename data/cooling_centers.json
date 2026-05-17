@@ -7,7 +7,7 @@
         "lat": 24.9215,
         "lng": 67.0969,
         "capacity": 200,
-        "current_occupancy": 87,
+        "current_occupancy": 200,
         "has_medical_staff": true,
         "operating_hours": "08:00 AM - 10:00 PM",
         "status": "open",
@@ -18,107 +18,6 @@
             "first_aid",
             "nurse_on_duty"
         ],
-        "note": "SIMULATED — No official cooling center network exists in Karachi. This is mock data for demo."
-    },
-    {
-        "id": "CC002",
-        "name": "FB Area Heatwave Relief Point",
-        "area": "Federal B Area",
-        "address": "Block 12, Federal B Area, Near Masjid-e-Bilal, Karachi",
-        "lat": 24.9380,
-        "lng": 67.0712,
-        "capacity": 150,
-        "current_occupancy": 143,
-        "has_medical_staff": false,
-        "operating_hours": "07:00 AM - 11:00 PM",
-        "status": "full",
-        "facilities": [
-            "water",
-            "fans",
-            "ORS_packets"
-        ],
-        "note": "SIMULATED — Mock data only."
-    },
-    {
-        "id": "CC003",
-        "name": "Nazimabad Public Relief Center",
-        "area": "Nazimabad",
-        "address": "Block 3, Nazimabad, Near Abbasi Shaheed Hospital, Karachi",
-        "lat": 24.9180,
-        "lng": 67.0410,
-        "capacity": 180,
-        "current_occupancy": 62,
-        "has_medical_staff": true,
-        "operating_hours": "08:00 AM - 10:00 PM",
-        "status": "open",
-        "facilities": [
-            "water",
-            "AC_room",
-            "ORS_packets",
-            "first_aid",
-            "doctor_on_call"
-        ],
-        "note": "SIMULATED — Mock data only."
-    },
-    {
-        "id": "CC004",
-        "name": "Korangi Industrial Area Relief Camp",
-        "area": "Korangi",
-        "address": "Sector 15, Korangi Industrial Area, Near Indus Hospital, Karachi",
-        "lat": 24.8301,
-        "lng": 67.1190,
-        "capacity": 120,
-        "current_occupancy": 45,
-        "has_medical_staff": true,
-        "operating_hours": "06:00 AM - 12:00 AM",
-        "status": "open",
-        "facilities": [
-            "water",
-            "fans",
-            "ORS_packets",
-            "first_aid",
-            "ambulance_standby"
-        ],
-        "note": "SIMULATED — Mock data only. Near Indus Hospital for quick referrals."
-    },
-    {
-        "id": "CC005",
-        "name": "Landhi Town Heatwave Center",
-        "area": "Landhi",
-        "address": "Landhi Colony, Sector 3A, Near Railway Station, Karachi",
-        "lat": 24.8562,
-        "lng": 67.2048,
-        "capacity": 100,
-        "current_occupancy": 38,
-        "has_medical_staff": false,
-        "operating_hours": "08:00 AM - 08:00 PM",
-        "status": "open",
-        "facilities": [
-            "water",
-            "fans",
-            "ORS_packets"
-        ],
-        "note": "SIMULATED — Mock data only."
-    },
-    {
-        "id": "CC006",
-        "name": "North Karachi Sector 11 Relief Point",
-        "area": "North Karachi",
-        "address": "Sector 11-C, North Karachi, Near Water Board Office, Karachi",
-        "lat": 24.9712,
-        "lng": 67.0621,
-        "capacity": 160,
-        "current_occupancy": 54,
-        "has_medical_staff": true,
-        "operating_hours": "07:00 AM - 11:00 PM",
-        "status": "open",
-        "facilities": [
-            "water",
-            "fans",
-            "ORS_packets",
-            "first_aid",
-            "nurse_on_duty"
-        ],
-        "note": "SIMULATED — Mock data only."
+        "note": "approximately 13 additional people received relief and medical attention at the center, center is now fully occupied"
     }
 ]

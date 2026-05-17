@@ -8,6 +8,8 @@ import HomeScreen from './screens/HomeScreen';
 import AlertsScreen from './screens/AlertsScreen';
 import ResourcesScreen from './screens/ResourcesScreen';
 import AgentTraceScreen from './screens/AgentTraceScreen';
+import MapScreen from './screens/MapScreen';
+import AmbulanceScreen from './screens/AmbulanceScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -35,9 +37,10 @@ export default function App() {
             tabBarIcon: ({ focused, color, size }) => {
               let iconName;
               if (route.name === 'Home') iconName = focused ? 'home' : 'home-outline';
-              else if (route.name === 'Alerts') iconName = focused ? 'warning' : 'warning-outline';
-              else if (route.name === 'Resources') iconName = focused ? 'medkit' : 'medkit-outline';
+              else if (route.name === 'Live Map') iconName = focused ? 'map' : 'map-outline';
               else if (route.name === 'AgentTrace') iconName = focused ? 'terminal' : 'terminal-outline';
+              else if (route.name === 'DriverHub') iconName = focused ? 'car' : 'car-outline';
+              else if (route.name === 'Alerts') iconName = focused ? 'warning' : 'warning-outline';
               return <Ionicons name={iconName} size={size} color={color} />;
             },
             tabBarActiveTintColor: '#D32F2F',
@@ -46,9 +49,10 @@ export default function App() {
           })}
         >
           <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'CIRO Dashboard' }} />
-          <Tab.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Live Alerts' }} />
-          <Tab.Screen name="Resources" component={ResourcesScreen} options={{ title: 'Resources' }} />
+          <Tab.Screen name="Live Map" component={MapScreen} options={{ title: 'Crisis Map' }} />
           <Tab.Screen name="AgentTrace" component={AgentTraceScreen} options={{ title: 'AI Trace' }} />
+          <Tab.Screen name="DriverHub" component={AmbulanceScreen} options={{ title: 'Driver Hub' }} />
+          <Tab.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Logs' }} />
         </Tab.Navigator>
       </NavigationContainer>
     </>
