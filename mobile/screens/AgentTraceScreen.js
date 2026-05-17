@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import io from 'socket.io-client';
 import { app_url } from '../url';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 
 export default function AgentTraceScreen({ route, navigation }) {
   const [logs, setLogs] = useState({ detection: null, planning: null, execution: null });
@@ -76,25 +77,51 @@ export default function AgentTraceScreen({ route, navigation }) {
     return () => socket.disconnect();
   }, [navigation]);
 
-  // Dynamic hospital calling simulation texts
+  // Dynamic hospital calling simulation with synchronized Expo Speech voice synthesis!
   useEffect(() => {
     if (status.planning === 'thinking') {
-      const texts = [
-        'Evaluating resources and generating response plan...',
-        'Agent contacting nearest hospital (Liaquat National)...',
-        'Liaquat National Hospital: 0 Emergency Beds Available. REJECTED.',
-        'Agent contacting next nearest (Aga Khan University Hospital)...',
-        'Aga Khan University Hospital: 15 Emergency Beds Available. SECURED.',
-        'Finalizing load-balanced tactical routing...'
+      const dialogue = [
+        { text: "System. Initiating urgent medical sweep. Calling nearest facility, Liaquat National Hospital.", statusText: "Contacting nearest: Liaquat National Hospital...", pitch: 1.1, rate: 0.95 },
+        { text: "This is Liaquat National. We are fully occupied due to heatstroke influx. Zero emergency beds available today.", statusText: "Liaquat National: 0 Emergency Beds Available. REJECTED.", pitch: 0.85, rate: 0.95 },
+        { text: "Alert. Zero beds. Re-routing call to Aga Khan University Hospital.", statusText: "Contacting next nearest: Aga Khan University Hospital...", pitch: 1.1, rate: 0.95 },
+        { text: "Aga Khan Admissions. Affirmative, we have fifteen emergency beds available. Securing capacity.", statusText: "Aga Khan University: 15 Emergency Beds Available. SECURED.", pitch: 0.9, rate: 0.95 },
+        { text: "Capacity confirmed. Fifteen beds locked. Dispatching tactical ambulance immediately.", statusText: "Finalizing load-balanced tactical routing...", pitch: 1.1, rate: 0.95 }
       ];
-      let idx = 0;
-      const interval = setInterval(() => {
-        if (idx < texts.length) {
-          setPlanningSubtext(texts[idx]);
-          idx++;
+
+      let currentIdx = 0;
+      let active = true;
+
+      const playNext = () => {
+        if (!active) return;
+        if (currentIdx < dialogue.length) {
+          const phrase = dialogue[currentIdx];
+          setPlanningSubtext(phrase.statusText);
+          
+          Speech.speak(phrase.text, {
+            pitch: phrase.pitch,
+            rate: phrase.rate,
+            onDone: () => {
+              if (!active) return;
+              currentIdx++;
+              setTimeout(playNext, 1200); // 1.2s delay between spoken turns for realism
+            },
+            onError: (err) => {
+              console.log("Speech Error, falling back to simulated ticks:", err);
+              if (!active) return;
+              currentIdx++;
+              setTimeout(playNext, 2500); // Auto advance fallback
+            }
+          });
         }
-      }, 700);
-      return () => clearInterval(interval);
+      };
+
+      // Kickoff speech dialogue
+      playNext();
+
+      return () => {
+        active = false;
+        Speech.stop();
+      };
     }
   }, [status.planning]);
 

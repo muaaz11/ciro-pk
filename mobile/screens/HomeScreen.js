@@ -49,13 +49,27 @@ export default function HomeScreen({ navigation }) {
       console.log("Could not get live location, falling back:", err.message);
     }
 
+    let areaName = 'Gulshan-e-Iqbal';
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        let geocode = await Location.reverseGeocodeAsync(coords);
+        if (geocode && geocode.length > 0) {
+          const first = geocode[0];
+          areaName = first.district || first.subregion || first.name || first.street || 'Gulshan-e-Iqbal';
+        }
+      }
+    } catch (err) {
+      console.log("Geocoding failed, using Gulshan-e-Iqbal fallback:", err);
+    }
+
     try {
       await fetch(`${app_url}/api/signals/inject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: '3 people collapsed near Gulshan chowrangi',
-          location_mentioned: 'Gulshan-e-Iqbal',
+          text: `3 people collapsed near ${areaName}`,
+          location_mentioned: areaName,
           signal_type: 'heatstroke_case',
           source: 'app_demo',
           mock_temperature: mockTemp,

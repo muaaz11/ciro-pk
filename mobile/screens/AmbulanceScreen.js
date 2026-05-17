@@ -10,7 +10,7 @@ export default function AmbulanceScreen({ navigation }) {
   const [pendingJob, setPendingJob] = useState(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [driverStatus, setDriverStatus] = useState('IDLE'); // IDLE, ASSIGNED, AT_INCIDENT, EN_ROUTE_HOSPITAL, COMPLETED
-  
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const socketRef = useRef(null);
 
@@ -57,11 +57,12 @@ export default function AmbulanceScreen({ navigation }) {
 
         setPendingJob({
           hospitalName: recommendation,
-          instruction: targetActions.instruction || "Proceed immediately to retrieve patient.",
+          instruction: `Dispatch to ${data.incident_area || 'Gulshan Chowrangi'}, retrieve victims, and transport to ${recommendation}`,
           reasoning: routeInfo.reasoning || "Balanced load to available beds.",
           bedsAvailable: routeInfo.emergency_beds_available || 15,
           incidentCoords: data.incident_coords || { latitude: 24.92, longitude: 67.09 },
-          hospitalCoords: data.hospital_coords || { latitude: 24.8765, longitude: 67.0689 }
+          hospitalCoords: data.hospital_coords || { latitude: 24.8765, longitude: 67.0689 },
+          incidentArea: data.incident_area || 'Gulshan Chowrangi'
         });
       }
     });
@@ -101,11 +102,11 @@ export default function AmbulanceScreen({ navigation }) {
   const handleStatusPress = (status) => {
     setDriverStatus(status);
     if (status === 'COMPLETED') {
-      Alert.alert(
-        "Mission Completed!",
-        "Ambulance reported delivered. All victims successfully checked in at Aga Khan University Hospital. Resetting terminal to Standby.",
-        [{ text: "OK" }]
-      );
+      // Alert.alert(
+      //   "Mission Completed!",
+      //   "Ambulance reported delivered. All victims successfully checked in at Aga Khan University Hospital. Resetting terminal to Standby.",
+      //   [{ text: "OK" }]
+      // );
       setTimeout(() => {
         setActiveJob(null);
         setPendingJob(null);
@@ -140,7 +141,7 @@ export default function AmbulanceScreen({ navigation }) {
           </View>
 
           <Text style={styles.patientTitle}>Victim Details:</Text>
-          <Text style={styles.patientText}>3 Heatstroke Victims reported collapsed near Gulshan Chowrangi.</Text>
+          <Text style={styles.patientText}>3 Heatstroke Victims reported collapsed near {pendingJob.incidentArea || "Gulshan Chowrangi"}.</Text>
 
           <View style={styles.divider} />
 
@@ -159,7 +160,7 @@ export default function AmbulanceScreen({ navigation }) {
             <Text style={[styles.value, { color: '#4CAF50' }]}>✓ SECURED ({pendingJob.bedsAvailable} available)</Text>
           </View>
 
-          <Text style={styles.incomingReason}>AI Logic: Nearest hospital Liaquat was rejected due to 0% capacity (fully packed). Patient redirected to Aga Khan which has 15 open beds.</Text>
+          {/* <Text style={styles.incomingReason}>AI Logic: Nearest hospital Liaquat was rejected due to 0% capacity (fully packed). Patient redirected to Aga Khan which has 15 open beds.</Text> */}
 
           <Animated.View style={{ transform: [{ scale: pulseAnim }], marginTop: 20 }}>
             <TouchableOpacity style={styles.acceptButton} onPress={handleAcceptJob}>
@@ -176,11 +177,11 @@ export default function AmbulanceScreen({ navigation }) {
           <View style={styles.card}>
             <View style={styles.rowBetween}>
               <Text style={styles.jobBadge}>DEPLOYMENT ACTIVE</Text>
-              <Text style={[styles.statusBadge, 
-                driverStatus === 'ASSIGNED' && { backgroundColor: '#FF9800' },
-                driverStatus === 'AT_INCIDENT' && { backgroundColor: '#FF5722' },
-                driverStatus === 'EN_ROUTE_HOSPITAL' && { backgroundColor: '#2196F3' },
-                driverStatus === 'COMPLETED' && { backgroundColor: '#4CAF50' }
+              <Text style={[styles.statusBadge,
+              driverStatus === 'ASSIGNED' && { backgroundColor: '#FF9800' },
+              driverStatus === 'AT_INCIDENT' && { backgroundColor: '#FF5722' },
+              driverStatus === 'EN_ROUTE_HOSPITAL' && { backgroundColor: '#2196F3' },
+              driverStatus === 'COMPLETED' && { backgroundColor: '#4CAF50' }
               ]}>
                 {driverStatus.replace('_', ' ')}
               </Text>
@@ -242,28 +243,28 @@ export default function AmbulanceScreen({ navigation }) {
           <View style={styles.actionsCard}>
             <Text style={styles.sectionTitle}>Driver Check-In Logs</Text>
             <View style={styles.buttonGrid}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionBtn, driverStatus === 'ASSIGNED' && styles.activeBtn]}
                 onPress={() => handleStatusPress('ASSIGNED')}
               >
                 <Text style={styles.btnText}>Heading to Patient</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionBtn, driverStatus === 'AT_INCIDENT' && styles.activeBtn]}
                 onPress={() => handleStatusPress('AT_INCIDENT')}
               >
                 <Text style={styles.btnText}>Arrived at Scene</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionBtn, driverStatus === 'EN_ROUTE_HOSPITAL' && styles.activeBtn]}
                 onPress={() => handleStatusPress('EN_ROUTE_HOSPITAL')}
               >
                 <Text style={styles.btnText}>Transporting Patient</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionBtn, driverStatus === 'COMPLETED' && styles.activeBtn]}
                 onPress={() => handleStatusPress('COMPLETED')}
               >

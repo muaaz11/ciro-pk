@@ -170,7 +170,7 @@ export class Orchestrator {
         await new Promise(r => setTimeout(r, 2500));
 
         this.io.emit('agent_status', { agent: 'Planning', status: 'thinking' });
-        await new Promise(r => setTimeout(r, 5000)); // Dynamic pacing for radar calls visual
+        await new Promise(r => setTimeout(r, 14000)); // Paced perfectly to match the spoken speech dialogue!
         const plan = await runPlanningAgent(detection, hospitals, coolingCenters);
         
         const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || "Agakhan University Hospital";
@@ -179,6 +179,7 @@ export class Orchestrator {
         plan.hospital_coords = { latitude: targetHospital.lat, longitude: targetHospital.lng };
         plan.hospital_name = targetHospital.name;
         plan.incident_coords = { latitude: incidentLat, longitude: incidentLng };
+        plan.incident_area = firstSignal.location_mentioned || "Gulshan Chowrangi";
 
         this.io.emit('agent_status', { agent: 'Planning', status: 'completed', data: plan });
 
