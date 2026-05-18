@@ -13,7 +13,7 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataPath = path.join(__dirname, '../data');
+const dataPath = path.join(__dirname, './data');
 
 const app = express();
 const server = http.createServer(app);

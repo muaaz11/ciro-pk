@@ -1,0 +1,22 @@
+{
+  "heatwave_alerts": [
+    {
+      "id": "alert-1",
+      "location": "Karachi South",
+      "severity": "HIGH",
+      "temperature": 45,
+      "timestamp": "2026-05-15T12:00:00Z"
+    }
+  ],
+  "medical_facilities": [
+    {
+      "id": "facility-1",
+      "name": "Jinnah Postgraduate Medical Centre",
+      "capacity": "CRITICAL",
+      "location": {
+        "lat": 24.8532,
+        "lng": 67.0424
+      }
+    }
+  ]
+}
