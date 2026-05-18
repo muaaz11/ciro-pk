@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline } from '../components/MapView';
 import io from 'socket.io-client';
 import { app_url } from '../url';
 import { Ionicons } from '@expo/vector-icons';

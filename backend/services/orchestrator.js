@@ -170,9 +170,9 @@ export class Orchestrator {
         await new Promise(r => setTimeout(r, 2500));
 
         this.io.emit('agent_status', { agent: 'Planning', status: 'thinking' });
-        await new Promise(r => setTimeout(r, 14000)); // Paced perfectly to match the spoken speech dialogue!
+        await new Promise(r => setTimeout(r, 3000)); // Paced perfectly to match the spoken speech dialogue!
         const plan = await runPlanningAgent(detection, hospitals, coolingCenters);
-        
+
         const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || "Agakhan University Hospital";
         const targetHospital = hospitals.find(h => h.name.toLowerCase().includes(targetHospitalName.toLowerCase())) || hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
 

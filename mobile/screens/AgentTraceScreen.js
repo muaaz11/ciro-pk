@@ -20,6 +20,10 @@ export default function AgentTraceScreen({ route, navigation }) {
     socket.on('connect', () => console.log('Connected to Orchestrator Socket'));
 
     socket.on('agent_status', ({ agent, status: agentStatus, data }) => {
+      const navState = navigation.getState();
+      const currentRoute = navState?.routes[navState?.index]?.name;
+      if (currentRoute === 'DemoMode') return;
+
       if (agent === 'Detection' && agentStatus === 'thinking') {
         // A fresh demo scenario has been triggered! Reset all states programmatically
         setLogs({ detection: null, planning: null, execution: null });
@@ -52,6 +56,10 @@ export default function AgentTraceScreen({ route, navigation }) {
     });
 
     socket.on('simulation_tick', ({ step, progress }) => {
+      const navState = navigation.getState();
+      const currentRoute = navState?.routes[navState?.index]?.name;
+      if (currentRoute === 'DemoMode') return;
+
       setSimulationProgress(progress);
       
       // Dynamic visual logs completely synchronized with map coordinates & progress!

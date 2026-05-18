@@ -141,11 +141,10 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <TouchableOpacity
-        style={styles.demoBtn}
-        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : null)}
-        disabled={loading}
+        style={[styles.demoBtn, { backgroundColor: '#D32F2F' }]}
+        onPress={() => navigation.navigate('DemoMode')}
       >
-        <Text style={styles.demoBtnText}>{loading ? 'Injecting...' : 'Trigger Demo Incident'}</Text>
+        <Text style={styles.demoBtnText}>Start Live Demo</Text>
       </TouchableOpacity>
     </ScrollView>
   );

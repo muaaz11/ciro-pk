@@ -10,6 +10,7 @@ import ResourcesScreen from './screens/ResourcesScreen';
 import AgentTraceScreen from './screens/AgentTraceScreen';
 import MapScreen from './screens/MapScreen';
 import AmbulanceScreen from './screens/AmbulanceScreen';
+import DemoModeScreen from './screens/DemoModeScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -49,6 +50,15 @@ export default function App() {
           <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'CIRO Dashboard' }} />
           <Tab.Screen name="AgentTrace" component={AgentTraceScreen} options={{ title: 'AI Trace' }} />
           <Tab.Screen name="DriverHub" component={AmbulanceScreen} options={{ title: 'Driver Hub' }} />
+          <Tab.Screen 
+            name="DemoMode" 
+            component={DemoModeScreen} 
+            options={{ 
+              title: 'Demo Mode',
+              tabBarButton: () => null,
+              headerShown: false
+            }} 
+          />
         </Tab.Navigator>
       </NavigationContainer>
     </>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Animated } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline } from '../components/MapView';
 import io from 'socket.io-client';
 import { app_url } from '../url';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +41,10 @@ export default function AmbulanceScreen({ navigation }) {
     });
 
     socket.on('agent_status', ({ agent, status, data }) => {
+      const navState = navigation.getState();
+      const currentRoute = navState?.routes[navState?.index]?.name;
+      if (currentRoute === 'DemoMode') return;
+
       if (agent === 'Planning' && status === 'thinking') {
         setIsPlanning(true);
         setActiveJob(null);
@@ -68,6 +72,10 @@ export default function AmbulanceScreen({ navigation }) {
     });
 
     socket.on('simulation_tick', ({ step, progress, ambulance_position, incident_position, hospital_position, hospital_name }) => {
+      const navState = navigation.getState();
+      const currentRoute = navState?.routes[navState?.index]?.name;
+      if (currentRoute === 'DemoMode') return;
+
       // Update coordinates
       setActiveJob(prev => {
         if (!prev) return null;
