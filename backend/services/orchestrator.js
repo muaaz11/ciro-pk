@@ -1,6 +1,7 @@
 import { runDetectionAgent } from '../../agents/detectionAgent.js';
 import { runPlanningAgent } from '../../agents/planningAgent.js';
 import { runExecutionAgent } from '../../agents/executionAgent.js';
+import { runAntigravityAgent } from '../../agents/antigravityAgent.js';
 import { pool } from '../database.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -24,11 +25,13 @@ async function readDataFile(filename) {
 export class SimulationEngine {
   constructor(io) {
     this.io = io;
-    this.intervalId = null;
+    this.intervals = new Map();
   }
 
-  start(executionPlan) {
-    if (this.intervalId) clearInterval(this.intervalId);
+  start(executionPlan, incidentId) {
+    if (this.intervals.has(incidentId)) {
+      clearInterval(this.intervals.get(incidentId));
+    }
 
     const steps = executionPlan.execution_log || [];
     let currentStepIndex = 0;
@@ -37,13 +40,24 @@ export class SimulationEngine {
     const destCoords = executionPlan.incident_coords || { latitude: 24.92, longitude: 67.09 };
     const hospitalName = executionPlan.hospital_name || "Liaquat National Hospital";
 
-    this.io.emit('agent_status', { agent: 'Execution', status: 'simulating' });
+    this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'simulating' });
 
-    this.intervalId = setInterval(() => {
+    let currentBeds = 15;
+    let initialTraffic = 85;
+    const alertStages = [
+      "Preparing city-wide broadcast...",
+      "Dispatching localized SMS alerts...",
+      "Alerts successfully delivered to 5,000 residents.",
+      "Emergency channels active.",
+      "No active alerts pending."
+    ];
+
+    const intervalId = setInterval(() => {
       if (currentStepIndex >= steps.length) {
-        clearInterval(this.intervalId);
+        clearInterval(this.intervals.get(incidentId));
+        this.intervals.delete(incidentId);
         // Only emit completed when the simulation actually reaches the hospital destination!
-        this.io.emit('agent_status', { agent: 'Execution', status: 'completed', data: executionPlan });
+        this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'completed', data: executionPlan });
         return;
       }
 
@@ -53,59 +67,70 @@ export class SimulationEngine {
       const currentLat = startCoords.latitude + ((destCoords.latitude - startCoords.latitude) * (progress / 100));
       const currentLng = startCoords.longitude + ((destCoords.longitude - startCoords.longitude) * (progress / 100));
 
+      // --- Multi-object Simulation Logic ---
+      if (progress > 50 && progress < 90 && currentStepIndex % 2 === 0) {
+        currentBeds = Math.max(0, currentBeds - 1); // Mock victims taking beds
+      }
+      let hospitalLoad = Math.floor(100 - ((currentBeds / 15) * 100));
+      
+      let trafficStatus = Math.max(30, initialTraffic - Math.floor(progress / 2)); 
+      
+      let alertIndex = Math.floor((progress / 100) * alertStages.length);
+      if (alertIndex >= alertStages.length) alertIndex = alertStages.length - 1;
+
       this.io.emit('simulation_tick', {
+        incidentId,
         step,
         progress,
         ambulance_position: { latitude: currentLat, longitude: currentLng },
         incident_position: destCoords,
         hospital_position: startCoords,
-        hospital_name: hospitalName
+        hospital_name: hospitalName,
+        // Multi-system layers
+        hospital_load: hospitalLoad + '% Full',
+        traffic_status: trafficStatus + '% Congestion',
+        active_alerts: [alertStages[alertIndex]]
       });
       currentStepIndex++;
     }, 3500); // Emits a step every 3.5 seconds for situational pacing
+    
+    this.intervals.set(incidentId, intervalId);
   }
 }
 
 export class Orchestrator {
   constructor(io) {
     this.io = io;
-    this.signalBuffer = [];
-    this.isProcessing = false;
     this.simulationEngine = new SimulationEngine(io);
-    this.resolveDriverAcceptance = null;
-    this.activePlan = null;
+    this.resolveDriverAcceptance = new Map();
+    this.activePlans = new Map();
   }
 
   syncActiveDispatch(socket) {
-    if (this.activePlan && this.resolveDriverAcceptance) {
-      console.log('Syncing active dispatch plan with newly connected socket:', socket.id);
-      socket.emit('agent_status', { agent: 'Ambulance', status: 'waiting_acceptance', data: this.activePlan });
+    for (const [incidentId, plan] of this.activePlans.entries()) {
+      if (this.resolveDriverAcceptance.has(incidentId)) {
+        console.log(`Syncing active dispatch plan for incident ${incidentId} with newly connected socket:`, socket.id);
+        socket.emit('agent_status', { incidentId, agent: 'Ambulance', status: 'waiting_acceptance', data: plan });
+      }
     }
   }
 
-  acceptDispatch() {
-    if (this.resolveDriverAcceptance) {
-      this.resolveDriverAcceptance();
-      this.resolveDriverAcceptance = null;
+  acceptDispatch(incidentId) {
+    if (this.resolveDriverAcceptance.has(incidentId)) {
+      const resolveFn = this.resolveDriverAcceptance.get(incidentId);
+      resolveFn();
+      this.resolveDriverAcceptance.delete(incidentId);
     }
   }
 
   async handleNewSignal(signal) {
-    this.signalBuffer.push(signal);
     this.io.emit('signal_received', signal);
-
-    // Evaluate if we should process
-    if (this.signalBuffer.length >= 1 && !this.isProcessing) {
-      // Trigger processing (For hackathon, trigger immediately on signal)
-      this.processCycle();
-    }
+    const incidentId = `INC-${Date.now()}`;
+    // Run parallel processing workflow independently!
+    this.processIncident(incidentId, [signal]);
   }
 
-  async processCycle() {
-    this.isProcessing = true;
-    const signalsToProcess = [...this.signalBuffer];
-    this.signalBuffer = []; // clear buffer
-
+  async processIncident(incidentId, signalsToProcess) {
     try {
       const hospitals = await readDataFile('hospital.json');
       const coolingCenters = await readDataFile('cooling_centers.json');
@@ -115,7 +140,7 @@ export class Orchestrator {
       const mockSignal = signalsToProcess.find(s => s.mock_temperature !== undefined);
 
       if (mockSignal && mockSignal.mock_temperature) {
-        console.log(`Using MOCK temperature: ${mockSignal.mock_temperature}C for demo scenario`);
+        console.log(`[${incidentId}] Using MOCK temperature: ${mockSignal.mock_temperature}C for demo scenario`);
         weather = {
           temperature_celsius: mockSignal.mock_temperature,
           humidity_percent: 60,
@@ -132,10 +157,10 @@ export class Orchestrator {
               humidity_percent: weatherData.main.humidity,
               description: weatherData.weather[0].description
             };
-            console.log('Real weather fetched:', weather);
+            console.log(`[${incidentId}] Real weather fetched:`, weather);
           }
         } catch (e) {
-          console.error("Failed to fetch real weather, using mock", e.message);
+          console.error(`[${incidentId}] Failed to fetch real weather, using mock`, e.message);
         }
       }
 
@@ -143,84 +168,120 @@ export class Orchestrator {
       const incidentLat = firstSignal.latitude || 24.92;
       const incidentLng = firstSignal.longitude || 67.09;
 
-      this.io.emit('agent_status', { agent: 'Detection', status: 'thinking' });
-      await new Promise(r => setTimeout(r, 2000));
+      // --- ANTIGRAVITY BRAIN LAYER ---
+      this.io.emit('agent_status', { incidentId, agent: 'Antigravity', status: 'thinking' });
+      const agDecision = await runAntigravityAgent(signalsToProcess, weather, currentTime);
+      console.log(`\n[ANTIGRAVITY_DECISION_TRACE] [${incidentId}]\n`, JSON.stringify(agDecision, null, 2), "\n");
+      this.io.emit('agent_status', { incidentId, agent: 'Antigravity', status: 'completed', data: agDecision });
 
-      let detection;
-      // HARD LIMIT: If temp is below 38C, it's mathematically not a heatwave.
-      if (weather.temperature_celsius < 38) {
-        console.log(`Hard rejecting: Temp is ${weather.temperature_celsius}C (Below 38C limit)`);
-        detection = {
-          crisis_detected: false,
-          severity: "LOW",
-          confidence: 100,
-          affected_areas: [],
-          reasoning: `The current temperature is ${weather.temperature_celsius}°C. A heatwave crisis requires temperatures of 38°C or higher. Any reported collapses are likely unrelated to weather. No escalation needed.`
-        };
+      let detection = { crisis_detected: false, severity: agDecision.severity_level || "LOW" };
+      
+      if (agDecision.run_detection) {
+        this.io.emit('agent_status', { incidentId, agent: 'Detection', status: 'thinking' });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // HARD LIMIT: If temp is below 38C, it's mathematically not a heatwave.
+        if (weather.temperature_celsius < 38) {
+          console.log(`[${incidentId}] Hard rejecting: Temp is ${weather.temperature_celsius}C (Below 38C limit)`);
+          detection = {
+            crisis_detected: false,
+            severity: agDecision.severity_level || "LOW",
+            confidence: 100,
+            affected_areas: [],
+            reasoning: `The current temperature is ${weather.temperature_celsius}°C. A heatwave crisis requires temperatures of 38°C or higher. Any reported collapses are likely unrelated to weather. No escalation needed.`
+          };
+        } else {
+          detection = await runDetectionAgent(signalsToProcess, weather, currentTime);
+          if (agDecision.severity_level) {
+            detection.severity = agDecision.severity_level;
+          }
+        }
+
+        detection.latitude = incidentLat;
+        detection.longitude = incidentLng;
+        detection.weather_context = weather;
+        this.io.emit('agent_status', { incidentId, agent: 'Detection', status: 'completed', data: detection });
       } else {
-        detection = await runDetectionAgent(signalsToProcess, weather, currentTime);
+        this.io.emit('agent_status', { incidentId, agent: 'Detection', status: 'skipped' });
+        detection.crisis_detected = agDecision.run_planning || agDecision.run_execution;
       }
-
-      detection.latitude = incidentLat;
-      detection.longitude = incidentLng;
-      detection.weather_context = weather;
-      this.io.emit('agent_status', { agent: 'Detection', status: 'completed', data: detection });
 
       if (detection.crisis_detected) {
-        await new Promise(r => setTimeout(r, 2500));
+        let plan;
 
-        this.io.emit('agent_status', { agent: 'Planning', status: 'thinking' });
-        await new Promise(r => setTimeout(r, 14000)); // Paced perfectly to match the spoken speech dialogue!
-        const plan = await runPlanningAgent(detection, hospitals, coolingCenters);
-        
-        const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || "Agakhan University Hospital";
-        const targetHospital = hospitals.find(h => h.name.toLowerCase().includes(targetHospitalName.toLowerCase())) || hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
+        if (agDecision.run_planning) {
+          await new Promise(r => setTimeout(r, 2500));
+          this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'thinking' });
+          await new Promise(r => setTimeout(r, 14000)); // Paced perfectly to match the spoken speech dialogue!
+          plan = await runPlanningAgent(detection, hospitals, coolingCenters);
+          
+          const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || "Agakhan University Hospital";
+          const targetHospital = hospitals.find(h => h.name.toLowerCase().includes(targetHospitalName.toLowerCase())) || hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
 
-        plan.hospital_coords = { latitude: targetHospital.lat, longitude: targetHospital.lng };
-        plan.hospital_name = targetHospital.name;
-        plan.incident_coords = { latitude: incidentLat, longitude: incidentLng };
-        plan.incident_area = firstSignal.location_mentioned || "Gulshan Chowrangi";
+          plan.hospital_coords = { latitude: targetHospital.lat, longitude: targetHospital.lng };
+          plan.hospital_name = targetHospital.name;
+          plan.incident_coords = { latitude: incidentLat, longitude: incidentLng };
+          plan.incident_area = firstSignal.location_mentioned || "Gulshan Chowrangi";
 
-        this.io.emit('agent_status', { agent: 'Planning', status: 'completed', data: plan });
+          this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'completed', data: plan });
+        } else {
+          this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'skipped' });
+          const targetHospital = hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
+          plan = {
+            hospital_coords: { latitude: targetHospital.lat, longitude: targetHospital.lng },
+            hospital_name: targetHospital.name,
+            incident_coords: { latitude: incidentLat, longitude: incidentLng },
+            incident_area: firstSignal.location_mentioned || "Unknown"
+          };
+        }
 
-        // WAIT FOR DRIVER TO ACCEPT DISPATCH (blocks execution flow)
-        this.activePlan = plan;
-        this.io.emit('agent_status', { agent: 'Ambulance', status: 'waiting_acceptance', data: plan });
-        console.log("Blocking execution, waiting for driver acceptance...");
-        await new Promise((resolve) => {
-          this.resolveDriverAcceptance = resolve;
-        });
-        console.log("Driver accepted dispatch! Resuming execution workflow...");
-        this.activePlan = null;
+        const isExecutionBlocked = (agDecision.confidence < 60) || (agDecision.run_execution === false);
 
-        this.io.emit('agent_status', { agent: 'Ambulance', status: 'accepted' });
-        await new Promise(r => setTimeout(r, 3000)); // Deliberate delay to show user dispatch confirmation
+        if (!isExecutionBlocked) {
+          // WAIT FOR DRIVER TO ACCEPT DISPATCH (blocks execution flow for this incident only)
+          this.activePlans.set(incidentId, plan);
+          this.io.emit('agent_status', { incidentId, agent: 'Ambulance', status: 'waiting_acceptance', data: plan });
+          console.log(`[${incidentId}] Blocking execution, waiting for driver acceptance...`);
+          
+          await new Promise((resolve) => {
+            this.resolveDriverAcceptance.set(incidentId, resolve);
+          });
+          
+          console.log(`[${incidentId}] Driver accepted dispatch! Resuming execution workflow...`);
+          this.activePlans.delete(incidentId);
 
-        this.io.emit('agent_status', { agent: 'Execution', status: 'thinking' });
-        await new Promise(r => setTimeout(r, 4500)); // Dramatic pacing for LLM generation
-        const execution = await runExecutionAgent(plan, hospitals, coolingCenters);
+          this.io.emit('agent_status', { incidentId, agent: 'Ambulance', status: 'accepted' });
+          await new Promise(r => setTimeout(r, 3000)); // Deliberate delay to show user dispatch confirmation
 
-        execution.incident_coords = { latitude: incidentLat, longitude: incidentLng };
-        execution.hospital_coords = { latitude: targetHospital.lat, longitude: targetHospital.lng };
-        execution.hospital_name = targetHospital.name;
+          this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'thinking' });
+          await new Promise(r => setTimeout(r, 4500)); // Dramatic pacing for LLM generation
+          const execution = await runExecutionAgent(plan, hospitals, coolingCenters);
 
-        // Commencing simulation
-        await new Promise(r => setTimeout(r, 1500));
-        this.simulationEngine.start(execution);
+          execution.incident_coords = plan.incident_coords;
+          execution.hospital_coords = plan.hospital_coords;
+          execution.hospital_name = plan.hospital_name;
 
-        this.saveIncidentToDB(detection, plan, execution, signalsToProcess).catch(err => console.error("DB Save Error:", err));
+          // Commencing simulation
+          await new Promise(r => setTimeout(r, 1500));
+          this.simulationEngine.start(execution, incidentId);
+
+          this.saveIncidentToDB(detection, plan, execution, signalsToProcess).catch(err => console.error("DB Save Error:", err));
+        } else {
+          let skipReason = "Execution skipped by Antigravity Layer";
+          if (agDecision.confidence < 60) {
+            skipReason = `Execution BLOCKED by Antigravity Guard (Confidence too low: ${agDecision.confidence})`;
+          }
+          console.log(`\n[ANTIGRAVITY_ENFORCEMENT] [${incidentId}] ${skipReason}\n`);
+          this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'skipped' });
+          this.saveIncidentToDB(detection, plan, { execution_log: [], incident_report: { crisis_summary: skipReason, status: "ABORTED" } }, signalsToProcess).catch(err => console.error("DB Save Error:", err));
+        }
       } else {
-        this.io.emit('agent_status', { agent: 'Planning', status: 'skipped' });
-        this.io.emit('agent_status', { agent: 'Execution', status: 'skipped' });
+        this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'skipped' });
+        this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'skipped' });
       }
     } catch (err) {
-      console.error("Orchestration Error:", err);
-      this.io.emit('agent_error', { message: err.message });
-    } finally {
-      this.isProcessing = false;
-      if (this.signalBuffer.length > 0) {
-        this.processCycle();
-      }
+      console.error(`[${incidentId}] Orchestration Error:`, err);
+      this.io.emit('agent_error', { incidentId, message: err.message });
     }
   }
 

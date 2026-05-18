@@ -17,34 +17,19 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const KARACHI = { latitude: 24.90, longitude: 67.08, latitudeDelta: 0.09, longitudeDelta: 0.09 };
 
 export default function AmbulanceScreen({ navigation }) {
-  // ── Core state ───────────────────────────────────────────
-  const [phase, setPhase]             = useState(STATES.IDLE);
-  const [pendingJob, setPendingJob]   = useState(null);   // waiting acceptance
-  const [job, setJob]                 = useState(null);   // accepted job
-  const [isPlanning, setIsPlanning]   = useState(false);
+  const [missions, setMissions] = useState({});
+  const [selectedIncidentId, setSelectedIncidentId] = useState(null);
 
-  // ── Live simulation state ─────────────────────────────────
-  const [ambulancePos, setAmbulancePos] = useState(KARACHI);
-  const [bearing, setBearing]           = useState(0);
-  const [countdown, setCountdown]       = useState(null); // '02:00' string
-  const [progress, setProgress]         = useState(0);    // 0-100
-  const [livesSecured, setLivesSecured] = useState(0);
+  const socketRef = useRef(null);
+  const mapRef = useRef(null);
+  const simRefs = useRef({});
 
-  // ── Overlay ───────────────────────────────────────────────
-  const [showComplete, setShowComplete] = useState(false);
+  const slideAnim = useRef(new Animated.Value(400)).current;
 
-  // ── Animations ────────────────────────────────────────────
-  const slideAnim      = useRef(new Animated.Value(400)).current;
-  const pulseOpacity   = useRef(new Animated.Value(1)).current;
-  const hospitalPulse  = useRef(new Animated.Value(1)).current;
-  const checkScale     = useRef(new Animated.Value(0)).current;
+  // Pulse loops for UI
+  const pulseOpacity = useRef(new Animated.Value(1)).current;
+  const hospitalPulse = useRef(new Animated.Value(1)).current;
 
-  // ── Refs ──────────────────────────────────────────────────
-  const socketRef    = useRef(null);
-  const mapRef       = useRef(null);
-  const simRef       = useRef(null);   // simulation instance
-
-  // ── Pulse loops ───────────────────────────────────────────
   useEffect(() => {
     Animated.loop(Animated.sequence([
       Animated.timing(pulseOpacity, { toValue: 0.3, duration: 900, useNativeDriver: true }),
@@ -56,57 +41,42 @@ export default function AmbulanceScreen({ navigation }) {
     ])).start();
   }, []);
 
-  // ── Slide sheet ───────────────────────────────────────────
-  useEffect(() => {
-    const visible = isPlanning || pendingJob || job;
-    Animated.spring(slideAnim, {
-      toValue: visible ? 0 : 400,
-      tension: 40, friction: 8, useNativeDriver: true,
-    }).start();
-  }, [isPlanning, pendingJob, job]);
-
-  // ── Complete overlay animation ─────────────────────────────
-  useEffect(() => {
-    if (!showComplete) return;
-    checkScale.setValue(0);
-    Animated.spring(checkScale, { toValue: 1, tension: 30, friction: 5, useNativeDriver: true }).start();
-    let c = 0;
-    const t = setInterval(() => { c++; setLivesSecured(c); if (c >= 3) clearInterval(t); }, 400);
-    return () => clearInterval(t);
-  }, [showComplete]);
-
-  // ── Socket ─────────────────────────────────────────────────
   useEffect(() => {
     const socket = io(app_url);
     socketRef.current = socket;
 
     socket.on('connect', () => socket.emit('get_active_dispatch'));
 
-    socket.on('agent_status', ({ agent, status, data }) => {
-      if (agent === 'Planning' && status === 'thinking') {
-        setIsPlanning(true); setPendingJob(null); setJob(null);
-      }
-      if (agent === 'Planning' && status === 'completed') {
-        setIsPlanning(false);
-      }
+    socket.on('agent_status', ({ incidentId, agent, status, data }) => {
+      if (!incidentId) return;
+
       if (agent === 'Ambulance' && status === 'waiting_acceptance') {
-        setIsPlanning(false);
         const routeInfo = data?.hospital_routing || {};
         const name      = routeInfo.recommendation || 'Aga Khan University Hospital';
         const incCoords = data.incident_coords  || { latitude: 24.92,   longitude: 67.09 };
         const hosCoords = data.hospital_coords  || { latitude: 24.8765, longitude: 67.0689 };
 
-        setAmbulancePos(hosCoords);
-        setPendingJob({
-          hospitalName:   name,
-          bedsAvailable:  routeInfo.emergency_beds_available || 15,
-          incidentArea:   data.incident_area || 'Gulshan Chowrangi',
-          incidentCoords: incCoords,
-          hospitalCoords: hosCoords,
-        });
-        setPhase(STATES.DISPATCHED);
+        setMissions(prev => ({
+          ...prev,
+          [incidentId]: {
+            incidentId,
+            status: 'pending',
+            phase: STATES.DISPATCHED,
+            hospitalName: name,
+            bedsAvailable: routeInfo.emergency_beds_available || 15,
+            incidentArea: data.incident_area || 'Unknown Area',
+            incidentCoords: incCoords,
+            hospitalCoords: hosCoords,
+            ambulancePos: hosCoords,
+            bearing: 0,
+            countdown: null,
+            progress: 0,
+            livesSecured: 0
+          }
+        }));
 
-        // Centre map on route midpoint
+        setSelectedIncidentId(incidentId);
+
         mapRef.current?.animateToRegion({
           latitude:      (incCoords.latitude  + hosCoords.latitude)  / 2,
           longitude:     (incCoords.longitude + hosCoords.longitude) / 2,
@@ -116,90 +86,108 @@ export default function AmbulanceScreen({ navigation }) {
       }
     });
 
-    return () => { socket.disconnect(); simRef.current?.stop(); };
+    return () => { 
+      socket.disconnect(); 
+      Object.values(simRefs.current).forEach(sim => sim.stop());
+    };
   }, []);
 
-  // ── Accept dispatch ────────────────────────────────────────
-  const handleAccept = () => {
-    if (!socketRef.current || !pendingJob) return;
-    socketRef.current.emit('accept_dispatch');
+  useEffect(() => {
+    const visible = Object.keys(missions).length > 0;
+    Animated.spring(slideAnim, {
+      toValue: visible ? 0 : 400,
+      tension: 40, friction: 8, useNativeDriver: true,
+    }).start();
+  }, [missions]);
 
-    const accepted = pendingJob;
-    setPendingJob(null);
-    setJob(accepted);
-    setPhase(STATES.EN_ROUTE_TO_PATIENT);
+  const handleAccept = (incId) => {
+    if (!socketRef.current || !missions[incId]) return;
+    socketRef.current.emit('accept_dispatch', incId);
 
-    // Start client-side simulation engine
-    simRef.current?.stop();
+    const accepted = missions[incId];
+
+    setMissions(prev => ({
+       ...prev,
+       [incId]: { ...prev[incId], status: 'accepted', phase: STATES.EN_ROUTE_TO_PATIENT }
+    }));
+
+    if (simRefs.current[incId]) {
+       simRefs.current[incId].stop();
+    }
+
     const sim = createSimulation({
       hospitalCoords: accepted.hospitalCoords,
       incidentCoords: accepted.incidentCoords,
       onTick: ({ state, position, bearing: b, countdown: cd, progress: p }) => {
-        setPhase(state);
-        setAmbulancePos(position);
-        setBearing(b);
-        setCountdown(cd);
-        setProgress(p);
+        setMissions(prev => {
+           if(!prev[incId]) return prev;
+           return {
+              ...prev,
+              [incId]: { ...prev[incId], phase: state, ambulancePos: position, bearing: b, countdown: cd, progress: p }
+           };
+        });
 
-        // Camera tracking
-        mapRef.current?.animateCamera(
-          { center: position, zoom: 14, heading: b, pitch: 40 },
-          { duration: 900 }
-        );
+        if (selectedIncidentId === incId) {
+          mapRef.current?.animateCamera(
+            { center: position, zoom: 14, heading: b, pitch: 40 },
+            { duration: 900 }
+          );
+        }
       },
       onComplete: ({ position }) => {
-        setPhase(STATES.COMPLETED);
-        setAmbulancePos(position);
-        setShowComplete(true);
+        setMissions(prev => {
+           if(!prev[incId]) return prev;
+           return {
+              ...prev,
+              [incId]: { ...prev[incId], phase: STATES.COMPLETED, ambulancePos: position, livesSecured: 3 }
+           };
+        });
       },
     });
-    simRef.current = sim;
+    
+    simRefs.current[incId] = sim;
     sim.start();
 
-    Alert.alert('Dispatch Accepted!', 'Simulation started. Heading to patient...');
+    Alert.alert('Dispatch Accepted!', 'Simulation started for incident ' + incId);
     setTimeout(() => navigation.navigate('AgentTrace'), 800);
   };
 
-  // ── Manual check-in override ───────────────────────────────
-  const handleManualStatus = (newPhase) => {
-    setPhase(newPhase);
+  const handleManualStatus = (incId, newPhase) => {
+    setMissions(prev => ({
+       ...prev,
+       [incId]: { ...prev[incId], phase: newPhase }
+    }));
     if (newPhase === STATES.COMPLETED) {
-      simRef.current?.stop();
-      setShowComplete(true);
+      if (simRefs.current[incId]) simRefs.current[incId].stop();
+      setMissions(prev => ({
+         ...prev,
+         [incId]: { ...prev[incId], livesSecured: 3 }
+      }));
     }
   };
 
-  // ── Return to standby ──────────────────────────────────────
-  const handleStandby = () => {
-    simRef.current?.stop();
-    setShowComplete(false);
-    setJob(null); setPendingJob(null);
-    setPhase(STATES.IDLE);
-    setProgress(0); setCountdown(null); setBearing(0); setLivesSecured(0);
-    mapRef.current?.animateToRegion(KARACHI, 1200);
+  const handleStandby = (incId) => {
+    if (simRefs.current[incId]) simRefs.current[incId].stop();
+    setMissions(prev => {
+       const copy = {...prev};
+       delete copy[incId];
+       return copy;
+    });
+    if (selectedIncidentId === incId) {
+       setSelectedIncidentId(null);
+       mapRef.current?.animateToRegion(KARACHI, 1200);
+    }
   };
 
-  // ── Derived display values ─────────────────────────────────
-  const incCoords = job?.incidentCoords  || pendingJob?.incidentCoords;
-  const hosCoords = job?.hospitalCoords  || pendingJob?.hospitalCoords;
-  const isNearHospital = job && getDistanceKm(ambulancePos, job.hospitalCoords) < 0.5;
-  const distKm  = pendingJob
-    ? getDistanceKm(pendingJob.hospitalCoords, pendingJob.incidentCoords)
-    : 0;
-  const etaMin  = Math.round((distKm / 40) * 60);
+  const missionKeys = Object.keys(missions).sort((a,b) => b.localeCompare(a));
+  if (!selectedIncidentId && missionKeys.length > 0) {
+      setSelectedIncidentId(missionKeys[0]);
+  }
 
-  const phaseColor  = STATE_COLORS[phase]  || '#888';
-  const phaseLabel  = STATE_LABELS[phase]  || phase;
-  const showMap     = phase !== STATES.IDLE;
-  const patientPickedUp = [
-    STATES.TRANSPORTING_PATIENT,
-    STATES.ARRIVED_AT_HOSPITAL,
-    STATES.COMPLETED,
-  ].includes(phase);
+  const selectedMission = selectedIncidentId ? missions[selectedIncidentId] : null;
 
   return (
     <View style={s.root}>
-
       {/* ── MAP ──────────────────────────────────────────────── */}
       <View style={s.mapWrap}>
         <MapView
@@ -209,206 +197,212 @@ export default function AmbulanceScreen({ navigation }) {
           userInterfaceStyle="dark"
           customMapStyle={DARK_MAP}
         >
-          {/* Planned route (dashed orange) — pending only */}
-          {pendingJob && incCoords && hosCoords && (
-            <Polyline
-              coordinates={[hosCoords, incCoords]}
-              strokeColor="rgba(255,111,0,0.65)"
-              strokeWidth={3}
-              lineDashPattern={[8, 5]}
-            />
-          )}
+          {missionKeys.map(id => {
+             const m = missions[id];
+             const isSelected = id === selectedIncidentId;
+             const isPending = m.status === 'pending';
+             const isMapVisible = m.phase !== STATES.IDLE;
+             const patientPickedUp = [STATES.TRANSPORTING_PATIENT, STATES.ARRIVED_AT_HOSPITAL, STATES.COMPLETED].includes(m.phase);
+             const isNearHospital = getDistanceKm(m.ambulancePos, m.hospitalCoords) < 0.5;
 
-          {/* Blue line: ambulance → patient (en route) */}
-          {job && phase === STATES.EN_ROUTE_TO_PATIENT && incCoords && (
-            <Polyline
-              coordinates={[ambulancePos, incCoords]}
-              strokeColor="#2196F3"
-              strokeWidth={5}
-            />
-          )}
+             if (!isMapVisible) return null;
 
-          {/* Green line: ambulance → hospital (transport) */}
-          {job && phase === STATES.TRANSPORTING_PATIENT && hosCoords && (
-            <Polyline
-              coordinates={[ambulancePos, hosCoords]}
-              strokeColor="#4CAF50"
-              strokeWidth={5}
-            />
-          )}
+             return (
+               <React.Fragment key={id}>
+                 {/* Planned route */}
+                 {isPending && m.incidentCoords && m.hospitalCoords && isSelected && (
+                   <Polyline coordinates={[m.hospitalCoords, m.incidentCoords]} strokeColor="rgba(255,111,0,0.65)" strokeWidth={3} lineDashPattern={[8, 5]} />
+                 )}
 
-          {/* Incident marker */}
-          {incCoords && (
-            <Marker coordinate={incCoords} anchor={{ x: 0.5, y: 0.5 }}>
-              {patientPickedUp ? (
-                <View style={[s.markerCircle, { backgroundColor: '#4CAF50' }]}>
-                  <Ionicons name="checkmark" size={14} color="#FFF" />
-                </View>
-              ) : (
-                <Animated.View style={[s.markerPulse, { opacity: pulseOpacity }]}>
-                  <View style={[s.markerCircle, { backgroundColor: '#D32F2F' }]}>
-                    <Ionicons name="flame" size={14} color="#FFF" />
-                  </View>
-                </Animated.View>
-              )}
-            </Marker>
-          )}
+                 {/* Blue line: ambulance → patient */}
+                 {!isPending && m.phase === STATES.EN_ROUTE_TO_PATIENT && m.incidentCoords && isSelected && (
+                   <Polyline coordinates={[m.ambulancePos, m.incidentCoords]} strokeColor="#2196F3" strokeWidth={5} />
+                 )}
 
-          {/* Hospital marker */}
-          {hosCoords && (
-            <Marker coordinate={hosCoords} anchor={{ x: 0.5, y: 0.5 }}>
-              {isNearHospital ? (
-                <Animated.View style={[s.markerPulse, { transform: [{ scale: hospitalPulse }] }]}>
-                  <View style={[s.markerCircle, { backgroundColor: '#4CAF50' }]}>
-                    <Ionicons name="business" size={14} color="#FFF" />
-                  </View>
-                </Animated.View>
-              ) : (
-                <View style={[s.markerCircle, { backgroundColor: '#388E3C' }]}>
-                  <Ionicons name="business" size={14} color="#FFF" />
-                </View>
-              )}
-            </Marker>
-          )}
+                 {/* Green line: ambulance → hospital */}
+                 {!isPending && m.phase === STATES.TRANSPORTING_PATIENT && m.hospitalCoords && isSelected && (
+                   <Polyline coordinates={[m.ambulancePos, m.hospitalCoords]} strokeColor="#4CAF50" strokeWidth={5} />
+                 )}
 
-          {/* Ambulance marker */}
-          {showMap && (
-            <Marker
-              coordinate={ambulancePos}
-              flat rotation={bearing}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <View style={s.ambMarker}>
-                <Text style={{ fontSize: 22 }}>🚑</Text>
-              </View>
-            </Marker>
-          )}
+                 {/* Incident marker */}
+                 {m.incidentCoords && (
+                   <Marker coordinate={m.incidentCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                     {patientPickedUp ? (
+                       <View style={[s.markerCircle, { backgroundColor: '#4CAF50' }]}>
+                         <Ionicons name="checkmark" size={14} color="#FFF" />
+                       </View>
+                     ) : (
+                       <Animated.View style={[s.markerPulse, { opacity: isSelected ? pulseOpacity : 0.8 }]}>
+                         <View style={[s.markerCircle, { backgroundColor: '#D32F2F' }]}>
+                           <Ionicons name="flame" size={14} color="#FFF" />
+                         </View>
+                       </Animated.View>
+                     )}
+                   </Marker>
+                 )}
+
+                 {/* Hospital marker */}
+                 {m.hospitalCoords && (
+                   <Marker coordinate={m.hospitalCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                     {isNearHospital && !isPending ? (
+                       <Animated.View style={[s.markerPulse, { transform: [{ scale: isSelected ? hospitalPulse : 1 }] }]}>
+                         <View style={[s.markerCircle, { backgroundColor: '#4CAF50' }]}>
+                           <Ionicons name="business" size={14} color="#FFF" />
+                         </View>
+                       </Animated.View>
+                     ) : (
+                       <View style={[s.markerCircle, { backgroundColor: '#388E3C' }]}>
+                         <Ionicons name="business" size={14} color="#FFF" />
+                       </View>
+                     )}
+                   </Marker>
+                 )}
+
+                 {/* Ambulance marker */}
+                 <Marker coordinate={m.ambulancePos} flat rotation={m.bearing} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.5} zIndex={isSelected ? 100 : 10}>
+                   <View style={[s.ambMarker, !isSelected && {borderColor: '#888'}]}>
+                     <Text style={{ fontSize: 22 }}>🚑</Text>
+                   </View>
+                 </Marker>
+               </React.Fragment>
+             );
+          })}
         </MapView>
 
-        {/* Header chip */}
-        <View style={s.headerChip}>
-          <View style={[s.statusDot, { backgroundColor: phaseColor }]} />
-          <Text style={s.headerText}>{phaseLabel}</Text>
-        </View>
-
-        {/* Patient onboard popover */}
-        {patientPickedUp && phase !== STATES.COMPLETED && (
-          <View style={s.onboardPop}>
-            <Text style={s.onboardText}>Patient Onboard 🚑</Text>
-          </View>
+        {selectedMission && (
+           <View style={s.headerChip}>
+             <View style={[s.statusDot, { backgroundColor: STATE_COLORS[selectedMission.phase] || '#888' }]} />
+             <Text style={s.headerText}>{STATE_LABELS[selectedMission.phase] || selectedMission.phase}</Text>
+           </View>
         )}
       </View>
 
       {/* ── SLIDING BOTTOM SHEET ─────────────────────────────── */}
       <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
-
-        {/* Planning */}
-        {isPlanning && (
-          <View style={s.center}>
-            <ActivityIndicator size="large" color="#FFEB3B" />
-            <Text style={s.planTitle}>AI Contacting Hospitals...</Text>
-            <View style={s.logBox}>
-              <Text style={s.logLine}>» PING: Liaquat National... 0 BEDS (REJECTED)</Text>
-              <Text style={s.logLine}>» PING: Aga Khan University... Checking...</Text>
-            </View>
-          </View>
+        {missionKeys.length > 0 && (
+           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 16, flexGrow: 0}}>
+              {missionKeys.map(id => {
+                 const m = missions[id];
+                 const isSelected = selectedIncidentId === id;
+                 return (
+                    <TouchableOpacity 
+                       key={id} 
+                       style={[s.tabBtn, isSelected && s.tabBtnActive]}
+                       onPress={() => setSelectedIncidentId(id)}
+                    >
+                       <Text style={[s.tabBtnText, isSelected && s.tabBtnTextActive]}>{id}</Text>
+                       <Text style={{color: '#888', fontSize: 10, marginTop: 4}}>{m.status.toUpperCase()}</Text>
+                    </TouchableOpacity>
+                 )
+              })}
+           </ScrollView>
         )}
 
-        {/* Pending dispatch */}
-        {pendingJob && !job && (
-          <View>
-            <View style={s.rowCenter}>
-              <View style={s.redDot} />
-              <Text style={s.dispatchTitle}>🚨 INCOMING EMERGENCY DISPATCH</Text>
-            </View>
-
-            <View style={s.twoCol}>
-              <View>
-                <Text style={s.subLabel}>📍 Pickup</Text>
-                <Text style={s.subVal}>{pendingJob.incidentArea}</Text>
+        <ScrollView style={{maxHeight: SCREEN_HEIGHT * 0.4}}>
+          {selectedMission && selectedMission.status === 'pending' && (
+            <View>
+              <View style={s.rowCenter}>
+                <View style={s.redDot} />
+                <Text style={s.dispatchTitle}>🚨 INCOMING EMERGENCY DISPATCH</Text>
               </View>
-              <View>
-                <Text style={s.subLabel}>🏥 Drop-off</Text>
-                <Text style={s.subVal} numberOfLines={1}>{pendingJob.hospitalName}</Text>
+
+              <View style={s.twoCol}>
+                <View>
+                  <Text style={s.subLabel}>📍 Pickup</Text>
+                  <Text style={s.subVal}>{selectedMission.incidentArea}</Text>
+                </View>
+                <View>
+                  <Text style={s.subLabel}>🏥 Drop-off</Text>
+                  <Text style={s.subVal} numberOfLines={1}>{selectedMission.hospitalName}</Text>
+                </View>
+              </View>
+
+              <View style={s.divider} />
+
+              <View style={s.specGrid}>
+                <Text style={s.spec}>👥 Victims: <Text style={s.specVal}>3 Heatstroke</Text></Text>
+                <Text style={s.spec}>🛏️ Beds: <Text style={[s.specVal, { color: '#4CAF50' }]}>{selectedMission.bedsAvailable} ✓</Text></Text>
+                <Text style={s.spec}>📏 Distance: <Text style={s.specVal}>~{(getDistanceKm(selectedMission.hospitalCoords, selectedMission.incidentCoords)).toFixed(1)} km</Text></Text>
+                <Text style={s.spec}>⏱️ ETA: <Text style={s.specVal}>~{Math.round((getDistanceKm(selectedMission.hospitalCoords, selectedMission.incidentCoords) / 40) * 60)} min</Text></Text>
+              </View>
+
+              <TouchableOpacity style={s.acceptBtn} onPress={() => handleAccept(selectedMission.incidentId)}>
+                <Ionicons name="checkmark-circle" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={s.acceptText}>ACCEPT DISPATCH</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {selectedMission && selectedMission.status === 'accepted' && selectedMission.phase !== STATES.COMPLETED && (
+            <View>
+              <View style={s.missionHeader}>
+                <Text style={s.missionBadge}>DEPLOYMENT ACTIVE</Text>
+                <View style={[s.phasePill, { backgroundColor: STATE_COLORS[selectedMission.phase] || '#888' }]}>
+                  <Text style={s.phasePillText}>{selectedMission.phase.replace(/_/g, ' ')}</Text>
+                </View>
+              </View>
+
+              <Text style={s.missionInfo}>
+                🏥 <Text style={s.missionVal}>{selectedMission.hospitalName}</Text>
+              </Text>
+              <Text style={s.missionInfo}>
+                🛏️ Beds Secured: <Text style={[s.missionVal, { color: '#4CAF50' }]}>{selectedMission.bedsAvailable} ✓</Text>
+              </Text>
+
+              {selectedMission.countdown && (
+                <View style={s.timerBox}>
+                  <Ionicons name="timer-outline" size={18} color="#FF6F00" />
+                  <Text style={s.timerLabel}> Transport Countdown: </Text>
+                  <Text style={s.timerVal}>{selectedMission.countdown}</Text>
+                </View>
+              )}
+
+              <View style={s.progressWrap}>
+                <View style={[s.progressFill, { width: `${selectedMission.progress}%` }]} />
+                <Text style={s.progressTxt}>{selectedMission.progress}%</Text>
+              </View>
+
+              <View style={s.divider} />
+
+              <Text style={s.checkTitle}>Driver Check-In:</Text>
+              <View style={s.btnGrid}>
+                {[
+                  { id: STATES.EN_ROUTE_TO_PATIENT,  label: 'Heading to Patient' },
+                  { id: STATES.ARRIVED_AT_PATIENT,   label: 'Arrived at Scene' },
+                  { id: STATES.TRANSPORTING_PATIENT, label: 'Transporting' },
+                  { id: STATES.COMPLETED,             label: 'Delivered ✓' },
+                ].map(b => (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={[s.checkBtn, selectedMission.phase === b.id && { backgroundColor: STATE_COLORS[selectedMission.phase] || '#888', borderColor: STATE_COLORS[selectedMission.phase] || '#888' }]}
+                    onPress={() => handleManualStatus(selectedMission.incidentId, b.id)}
+                  >
+                    <Text style={s.checkBtnTxt}>{b.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
+          )}
 
-            <View style={s.divider} />
-
-            <View style={s.specGrid}>
-              <Text style={s.spec}>👥 Victims: <Text style={s.specVal}>3 Heatstroke</Text></Text>
-              <Text style={s.spec}>🛏️ Beds: <Text style={[s.specVal, { color: '#4CAF50' }]}>{pendingJob.bedsAvailable} ✓</Text></Text>
-              <Text style={s.spec}>📏 Distance: <Text style={s.specVal}>~{distKm.toFixed(1)} km</Text></Text>
-              <Text style={s.spec}>⏱️ ETA: <Text style={s.specVal}>~{etaMin} min</Text></Text>
+          {selectedMission && selectedMission.phase === STATES.COMPLETED && (
+            <View style={s.statsBox}>
+               <Ionicons name="checkmark-circle" size={48} color="#4CAF50" />
+               <Text style={s.completeTitle}>✓ MISSION COMPLETE</Text>
+               <Text style={s.livesText}>🫀 {selectedMission.livesSecured} Lives Secured</Text>
+               <Text style={s.statRow}>Hospital: {selectedMission.hospitalName}</Text>
+               <Text style={s.statRow}>Patients Delivered: 3</Text>
+               <Text style={s.statRow}>Beds Updated in System: ✓</Text>
+               <TouchableOpacity style={[s.standbyBtn, {marginTop: 16}]} onPress={() => handleStandby(selectedMission.incidentId)}>
+                 <Text style={s.standbyTxt}>Close & Return to Standby</Text>
+               </TouchableOpacity>
             </View>
+          )}
 
-            <Text style={s.aiNote}>AI Logic: Liaquat bypassed (0 beds). AKUH selected (15 available).</Text>
-
-            <TouchableOpacity style={s.acceptBtn} onPress={handleAccept}>
-              <Ionicons name="checkmark-circle" size={20} color="#FFF" style={{ marginRight: 8 }} />
-              <Text style={s.acceptText}>ACCEPT DISPATCH</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Active mission */}
-        {job && (
-          <View>
-            <View style={s.missionHeader}>
-              <Text style={s.missionBadge}>DEPLOYMENT ACTIVE</Text>
-              <View style={[s.phasePill, { backgroundColor: phaseColor }]}>
-                <Text style={s.phasePillText}>{phase.replace(/_/g, ' ')}</Text>
-              </View>
-            </View>
-
-            <Text style={s.missionInfo}>
-              🏥 <Text style={s.missionVal}>{job.hospitalName}</Text>
-            </Text>
-            <Text style={s.missionInfo}>
-              🛏️ Beds Secured: <Text style={[s.missionVal, { color: '#4CAF50' }]}>{job.bedsAvailable} ✓</Text>
-            </Text>
-
-            {/* Countdown timer */}
-            {countdown && (
-              <View style={s.timerBox}>
-                <Ionicons name="timer-outline" size={18} color="#FF6F00" />
-                <Text style={s.timerLabel}> Transport Countdown: </Text>
-                <Text style={s.timerVal}>{countdown}</Text>
-              </View>
-            )}
-
-            {/* Progress bar */}
-            <View style={s.progressWrap}>
-              <View style={[s.progressFill, { width: `${progress}%` }]} />
-              <Text style={s.progressTxt}>{progress}%</Text>
-            </View>
-
-            <View style={s.divider} />
-
-            {/* Manual check-in buttons */}
-            <Text style={s.checkTitle}>Driver Check-In:</Text>
-            <View style={s.btnGrid}>
-              {[
-                { id: STATES.EN_ROUTE_TO_PATIENT,  label: 'Heading to Patient' },
-                { id: STATES.ARRIVED_AT_PATIENT,   label: 'Arrived at Scene' },
-                { id: STATES.TRANSPORTING_PATIENT, label: 'Transporting' },
-                { id: STATES.COMPLETED,             label: 'Delivered ✓' },
-              ].map(b => (
-                <TouchableOpacity
-                  key={b.id}
-                  style={[s.checkBtn, phase === b.id && { backgroundColor: phaseColor, borderColor: phaseColor }]}
-                  onPress={() => handleManualStatus(b.id)}
-                >
-                  <Text style={s.checkBtnTxt}>{b.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
+        </ScrollView>
       </Animated.View>
 
       {/* Idle state */}
-      {phase === STATES.IDLE && (
+      {missionKeys.length === 0 && (
         <View style={s.idleCard}>
           <Ionicons name="radio" size={44} color="#FF6F00" />
           <Text style={s.idleTitle}>Standing By...</Text>
@@ -416,26 +410,6 @@ export default function AmbulanceScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── MISSION COMPLETE OVERLAY ──────────────────────────── */}
-      {showComplete && (
-        <View style={s.overlayBg}>
-          <Animated.View style={[s.completeCard, { transform: [{ scale: checkScale }] }]}>
-            <Ionicons name="checkmark-circle" size={72} color="#4CAF50" />
-            <Text style={s.completeTitle}>✓ MISSION COMPLETE</Text>
-
-            <View style={s.statsBox}>
-              <Text style={s.livesText}>🫀 {livesSecured} Lives Secured</Text>
-              <Text style={s.statRow}>Hospital: {job?.hospitalName || 'Aga Khan'}</Text>
-              <Text style={s.statRow}>Patients Delivered: 3</Text>
-              <Text style={s.statRow}>Beds Updated in System: ✓</Text>
-            </View>
-
-            <TouchableOpacity style={s.standbyBtn} onPress={handleStandby}>
-              <Text style={s.standbyTxt}>Return to Standby</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-      )}
     </View>
   );
 }
@@ -454,12 +428,6 @@ const s = StyleSheet.create({
   },
   statusDot:    { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   headerText:   { color: '#FFF', fontSize: 13, fontWeight: '700' },
-  onboardPop:   {
-    position: 'absolute', bottom: 14, alignSelf: 'center',
-    backgroundColor: 'rgba(76,175,80,0.93)',
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-  },
-  onboardText:  { color: '#FFF', fontWeight: '700', fontSize: 12 },
   markerPulse:  { justifyContent: 'center', alignItems: 'center', width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(211,47,47,0.25)' },
   markerCircle: { width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
   ambMarker:    { backgroundColor: '#FFF', padding: 5, borderRadius: 99, borderWidth: 2.5, borderColor: '#2196F3' },
@@ -471,12 +439,12 @@ const s = StyleSheet.create({
     borderTopRightRadius: 22, borderWidth: 1, borderColor: '#2D2D30',
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 30,
   },
-  divider:    { height: 1, backgroundColor: '#2D2D30', marginVertical: 12 },
-  center:     { alignItems: 'center', paddingVertical: 8 },
-  planTitle:  { color: '#FFEB3B', fontWeight: '700', fontSize: 14, marginTop: 10, marginBottom: 12 },
-  logBox:     { alignSelf: 'stretch', backgroundColor: '#0A0A0B', padding: 12, borderRadius: 6, borderWidth: 1, borderColor: '#222' },
-  logLine:    { color: '#00FF00', fontSize: 11, fontFamily: 'monospace', marginBottom: 3 },
+  tabBtn: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#1A1A1A', borderRadius: 8, marginRight: 10, borderWidth: 1, borderColor: '#333' },
+  tabBtnActive: { borderColor: '#FF6F00', backgroundColor: '#331B00' },
+  tabBtnText: { color: '#888', fontWeight: 'bold' },
+  tabBtnTextActive: { color: '#FF6F00' },
 
+  divider:    { height: 1, backgroundColor: '#2D2D30', marginVertical: 12 },
   rowCenter:     { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   redDot:        { width: 10, height: 10, borderRadius: 5, backgroundColor: '#D32F2F', marginRight: 10 },
   dispatchTitle: { color: '#D32F2F', fontWeight: '700', fontSize: 14 },
@@ -486,7 +454,6 @@ const s = StyleSheet.create({
   specGrid:      { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   spec:          { width: '48%', color: '#777', fontSize: 12, marginBottom: 6 },
   specVal:       { color: '#FFF', fontWeight: '700' },
-  aiNote:        { color: '#888', fontSize: 11, fontStyle: 'italic', backgroundColor: '#1C1C1E', padding: 8, borderRadius: 6, marginBottom: 14 },
   acceptBtn:     { backgroundColor: '#D32F2F', paddingVertical: 14, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   acceptText:    { color: '#FFF', fontWeight: '700', fontSize: 15 },
 
@@ -514,8 +481,6 @@ const s = StyleSheet.create({
   idleTitle:{ color: '#888', fontSize: 16, fontWeight: '700', marginTop: 10 },
   idleSub:  { color: '#444', fontSize: 11, marginTop: 4, textAlign: 'center', paddingHorizontal: 20, lineHeight: 16 },
 
-  overlayBg:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  completeCard: { width: '85%', backgroundColor: '#141416', borderRadius: 18, borderWidth: 1, borderColor: '#2D2D30', padding: 28, alignItems: 'center' },
   completeTitle:{ color: '#4CAF50', fontSize: 20, fontWeight: '700', letterSpacing: 1, marginTop: 10 },
   statsBox:     { alignSelf: 'stretch', backgroundColor: '#0A0A0B', padding: 16, borderRadius: 10, borderWidth: 1, borderColor: '#222', marginVertical: 20, alignItems: 'center' },
   livesText:    { color: '#FF3D00', fontSize: 18, fontWeight: '700', marginBottom: 10 },
