@@ -64,25 +64,17 @@ export default function HomeScreen({ navigation }) {
     }
 
     try {
-      await fetch(`${app_url}/api/signals/inject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: `3 people collapsed near ${areaName}`,
-          location_mentioned: areaName,
-          signal_type: 'heatstroke_case',
-          source: 'app_demo',
-          mock_temperature: mockTemp,
-          latitude: coords.latitude,
-          longitude: coords.longitude
-        })
+      setLoading(false);
+      navigation.navigate('AgentTrace', {
+        triggerSignal: {
+          mockTemp: mockTemp,
+          areaName: areaName,
+          coords: coords
+        }
       });
-      navigation.navigate('AgentTrace');
-
     } catch (e) {
       console.error(e);
       Alert.alert('Error', e.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -142,7 +134,7 @@ export default function HomeScreen({ navigation }) {
 
       <TouchableOpacity
         style={styles.demoBtn}
-        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : null)}
+        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : 44)}
         disabled={loading}
       >
         <Text style={styles.demoBtnText}>{loading ? 'Injecting...' : 'Trigger Demo Incident'}</Text>

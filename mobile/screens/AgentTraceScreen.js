@@ -17,7 +17,27 @@ export default function AgentTraceScreen({ route, navigation }) {
   useEffect(() => {
     const socket = io(app_url);
 
-    socket.on('connect', () => console.log('Connected to Orchestrator Socket'));
+    socket.on('connect', () => {
+      console.log('Connected to Orchestrator Socket');
+      if (route.params?.triggerSignal) {
+        const { mockTemp, areaName, coords } = route.params.triggerSignal;
+        navigation.setParams({ triggerSignal: null });
+        
+        fetch(`${app_url}/api/signals/inject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `3 people collapsed near ${areaName}`,
+            location_mentioned: areaName,
+            signal_type: 'heatstroke_case',
+            source: 'app_demo',
+            mock_temperature: mockTemp,
+            latitude: coords.latitude,
+            longitude: coords.longitude
+          })
+        }).catch(err => console.error("Signal injection failed:", err));
+      }
+    });
 
     socket.on('agent_status', ({ agent, status: agentStatus, data }) => {
       if (agent === 'Detection' && agentStatus === 'thinking') {
@@ -53,7 +73,7 @@ export default function AgentTraceScreen({ route, navigation }) {
 
     socket.on('simulation_tick', ({ step, progress }) => {
       setSimulationProgress(progress);
-      
+
       // Dynamic visual logs completely synchronized with map coordinates & progress!
       let customLog = "";
       if (progress < 20) {
@@ -96,7 +116,7 @@ export default function AgentTraceScreen({ route, navigation }) {
         if (currentIdx < dialogue.length) {
           const phrase = dialogue[currentIdx];
           setPlanningSubtext(phrase.statusText);
-          
+
           Speech.speak(phrase.text, {
             pitch: phrase.pitch,
             rate: phrase.rate,
@@ -203,7 +223,7 @@ export default function AgentTraceScreen({ route, navigation }) {
               <Text style={styles.label}>Priority:</Text>
               <Text style={[styles.value, { color: '#FF6F00' }]}>{logs.planning.response_plan?.priority || 'IMMEDIATE'}</Text>
             </View>
-            
+
             <View style={[styles.weatherBadge, { backgroundColor: '#1B2E1E', borderColor: '#4CAF50', marginTop: 10 }]}>
               <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
               <Text style={{ color: '#4CAF50', fontWeight: 'bold', marginLeft: 6, fontSize: 12 }}>
@@ -218,7 +238,7 @@ export default function AgentTraceScreen({ route, navigation }) {
 
             <Text style={styles.summaryTitle}>AI Reasoning & Tactical Routing:</Text>
             <Text style={styles.summaryText}>{logs.planning.hospital_routing?.reasoning}</Text>
-            
+
             {waitingAcceptance && (
               <View style={styles.acceptanceAlert}>
                 <Ionicons name="alarm" size={24} color="#FFEB3B" style={styles.alertIcon} />
@@ -244,7 +264,7 @@ export default function AgentTraceScreen({ route, navigation }) {
 
       <Card title="Execution Simulator" agentStatus={status.execution}>
         {status.execution === 'thinking' ? (
-           <Text style={styles.bodyText}>Preparing simulation parameters...</Text>
+          <Text style={styles.bodyText}>Preparing simulation parameters...</Text>
         ) : status.execution === 'simulating' || status.execution === 'completed' ? (
           <View>
             <Text style={styles.summaryTitle}>Live Actions:</Text>
