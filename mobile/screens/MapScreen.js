@@ -10,7 +10,7 @@ export default function MapScreen() {
   const [incident, setIncident] = useState(null);
   const [hospital, setHospital] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  
+
   const karachiRegion = {
     latitude: 24.90,
     longitude: 67.08,
@@ -22,9 +22,9 @@ export default function MapScreen() {
     const socket = io(app_url);
 
     socket.on('agent_status', ({ agent, status, data }) => {
-       if (agent === 'Execution' && status === 'completed') {
-         setIsSimulating(true);
-       }
+      if (agent === 'Execution' && status === 'completed') {
+        setIsSimulating(true);
+      }
     });
 
     socket.on('simulation_tick', ({ step, progress, ambulance_position, incident_position, hospital_position, hospital_name }) => {
@@ -49,38 +49,38 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView 
+      <MapView
         style={styles.map}
         initialRegion={karachiRegion}
         userInterfaceStyle="dark"
       >
         {/* Render Active Incident */}
         {incident && (
-          <Marker 
+          <Marker
             coordinate={{ latitude: incident.latitude, longitude: incident.longitude }}
             title={incident.title}
           >
-             <View style={styles.pulseContainer}>
-               <Ionicons name="warning" size={30} color="#D32F2F" />
-             </View>
+            <View style={styles.pulseContainer}>
+              <Ionicons name="warning" size={30} color="#D32F2F" />
+            </View>
           </Marker>
         )}
 
         {/* Render Moving Ambulances */}
         {ambulance && (
-          <Marker 
+          <Marker
             coordinate={{ latitude: ambulance.latitude, longitude: ambulance.longitude }}
             title={`Ambulance - En Route (${Math.round(ambulance.progress)}%)`}
           >
             <View style={styles.ambulanceMarker}>
-               <Ionicons name="medical" size={16} color="#FFF" />
+              <Ionicons name="medical" size={16} color="#FFF" />
             </View>
           </Marker>
         )}
 
         {/* Render Hospital Source */}
         {hospital && (
-          <Marker 
+          <Marker
             coordinate={{ latitude: hospital.latitude, longitude: hospital.longitude }}
             title={hospital.name}
           >
@@ -115,28 +115,28 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   map: { width: '100%', height: '100%' },
-  pulseContainer: { 
-    backgroundColor: 'rgba(211, 47, 47, 0.3)', 
-    padding: 10, 
-    borderRadius: 30, 
-    borderWidth: 2, 
-    borderColor: '#D32F2F' 
+  pulseContainer: {
+    backgroundColor: 'rgba(211, 47, 47, 0.3)',
+    padding: 10,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: '#D32F2F'
   },
-  ambulanceMarker: { 
-    backgroundColor: '#4CAF50', 
-    padding: 6, 
-    borderRadius: 15, 
-    borderWidth: 2, 
+  ambulanceMarker: {
+    backgroundColor: '#4CAF50',
+    padding: 6,
+    borderRadius: 15,
+    borderWidth: 2,
     borderColor: '#000',
     elevation: 5
   },
-  overlay: { 
-    position: 'absolute', 
-    top: 20, 
-    left: 20, 
-    right: 20, 
-    backgroundColor: 'rgba(10, 10, 10, 0.85)', 
-    padding: 15, 
+  overlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(10, 10, 10, 0.85)',
+    padding: 15,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#333'

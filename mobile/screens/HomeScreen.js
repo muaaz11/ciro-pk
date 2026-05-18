@@ -7,11 +7,15 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [weather, setWeather] = useState(null);
   const [customTemp, setCustomTemp] = useState('');
+  const [overviewData, setOverviewData] = useState(null);
 
   useEffect(() => {
     fetchWeather();
-    // Refresh weather every 5 minutes
-    const interval = setInterval(fetchWeather, 300000);
+    fetchOverview();
+    const interval = setInterval(() => {
+       fetchWeather();
+       fetchOverview();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -24,6 +28,18 @@ export default function HomeScreen({ navigation }) {
       }
     } catch (e) {
       console.log('Error fetching weather:', e);
+    }
+  };
+
+  const fetchOverview = async () => {
+    try {
+      const res = await fetch(`${app_url}/api/crisis/overview`);
+      if (res.ok) {
+        const data = await res.json();
+        setOverviewData(data);
+      }
+    } catch (e) {
+      console.log('Error fetching overview:', e);
     }
   };
 
@@ -49,26 +65,41 @@ export default function HomeScreen({ navigation }) {
       console.log("Could not get live location, falling back:", err.message);
     }
 
+    let areaName = 'Gulshan-e-Iqbal';
     try {
-      await fetch(`${app_url}/api/signals/inject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: '3 people collapsed near Gulshan chowrangi',
-          location_mentioned: 'Gulshan-e-Iqbal',
-          signal_type: 'heatstroke_case',
-          source: 'app_demo',
-          mock_temperature: mockTemp,
-          latitude: coords.latitude,
-          longitude: coords.longitude
-        })
-      });
-      navigation.navigate('AgentTrace');
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        let geocode = await Location.reverseGeocodeAsync(coords);
+        if (geocode && geocode.length > 0) {
+          const first = geocode[0];
+          areaName = first.district || first.subregion || first.name || first.street || 'Gulshan-e-Iqbal';
+        }
+      }
+    } catch (err) {
+      console.log("Geocoding failed, using Gulshan-e-Iqbal fallback:", err);
+    }
 
+    try {
+      // INJECT SIGNAL DIRECTLY FROM HOME SCREEN
+      await fetch(`${app_url}/api/signals/inject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `3 people collapsed near ${areaName}`,
+            location_mentioned: areaName,
+            signal_type: 'heatstroke_case',
+            source: 'app_demo',
+            mock_temperature: mockTemp,
+            latitude: coords.latitude,
+            longitude: coords.longitude
+          })
+      });
+
+      setLoading(false);
+      navigation.navigate('AgentTrace');
     } catch (e) {
       console.error(e);
       Alert.alert('Error', e.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -103,13 +134,62 @@ export default function HomeScreen({ navigation }) {
 
       <View style={styles.row}>
         <View style={[styles.card, styles.halfCard]}>
-          <Text style={styles.statNumber}>12</Text>
-          <Text style={styles.statLabel}>Active Alerts</Text>
+          <Text style={styles.statNumber}>{overviewData ? overviewData.active_crises.length : 0}</Text>
+          <Text style={styles.statLabel}>Active Incidents</Text>
         </View>
         <View style={[styles.card, styles.halfCard]}>
-          <Text style={styles.statNumber}>4</Text>
-          <Text style={styles.statLabel}>Hospitals Full</Text>
+          <Text style={[styles.statNumber, {color: overviewData?.system_health_score < 50 ? '#D32F2F' : '#4CAF50'}]}>
+             {overviewData ? overviewData.system_health_score : 100}
+          </Text>
+          <Text style={styles.statLabel}>System Health</Text>
         </View>
+      </View>
+
+      {/* --- CRISIS OVERVIEW --- */}
+      {overviewData && overviewData.active_crises.length > 0 && (
+         <View style={{marginTop: 10, marginBottom: 20}}>
+            <Text style={styles.cardTitle}>City Crisis Overview</Text>
+            {overviewData.active_crises.map((c, i) => (
+               <View key={i} style={{backgroundColor: '#1A1A1A', padding: 12, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: c.severity === 'CRITICAL' ? '#D32F2F' : c.severity === 'HIGH' ? '#FF9800' : '#4CAF50'}}>
+                  <Text style={{color: '#FFF', fontWeight: 'bold'}}>{c.id}</Text>
+                  <Text style={{color: '#AAA', fontSize: 12}}>{c.location}</Text>
+                  <Text style={{color: c.severity === 'CRITICAL' ? '#D32F2F' : '#FF9800', fontSize: 10, marginTop: 4, fontWeight: 'bold'}}>SEVERITY: {c.severity}</Text>
+               </View>
+            ))}
+         </View>
+      )}
+
+      {/* --- IMPACT DASHBOARD --- */}
+      <View style={{marginTop: 10, marginBottom: 20}}>
+         <Text style={styles.cardTitle}>Global Impact Dashboard</Text>
+         <View style={{backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12}}>
+             <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12}}>
+                 <View>
+                     <Text style={{color: '#888', fontSize: 12}}>Congestion Reduced</Text>
+                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                         <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>85%</Text>
+                         <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 35%</Text>
+                     </View>
+                 </View>
+                 <View>
+                     <Text style={{color: '#888', fontSize: 12}}>Time Saved</Text>
+                     <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>12 mins</Text>
+                 </View>
+             </View>
+             <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                 <View>
+                     <Text style={{color: '#888', fontSize: 12}}>Hospital Load Shift</Text>
+                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                         <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>100%</Text>
+                         <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 80%</Text>
+                     </View>
+                 </View>
+                 <View>
+                     <Text style={{color: '#888', fontSize: 12}}>Lives Impacted</Text>
+                     <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>+3</Text>
+                 </View>
+             </View>
+         </View>
       </View>
 
       <Text style={{ color: '#888', marginTop: 20, marginBottom: 10, textAlign: 'center', fontWeight: 'bold' }}>SIMULATE CUSTOM TEMPERATURE</Text>
@@ -128,7 +208,7 @@ export default function HomeScreen({ navigation }) {
 
       <TouchableOpacity
         style={styles.demoBtn}
-        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : null)}
+        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : 44)}
         disabled={loading}
       >
         <Text style={styles.demoBtnText}>{loading ? 'Injecting...' : 'Trigger Demo Incident'}</Text>

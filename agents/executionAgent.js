@@ -32,6 +32,18 @@ Simulate execution of each action. Return ONLY this JSON, no extra text:
   "updated_resources": {
     "hospitals": [],
     "cooling_centers": []
+  },
+  "impact_metrics": {
+    "traffic_congestion": {
+      "before": "High",
+      "after": "Moderate"
+    },
+    "hospital_load": {
+      "before": "100%",
+      "after": "85%"
+    },
+    "estimated_response_time_saved": "12 minutes",
+    "lives_impacted_improvement": 3
   }
 }`
 
