@@ -1,0 +1,23 @@
+[
+    {
+        "id": "CC001",
+        "name": "Gulshan Community Relief Center",
+        "area": "Gulshan-e-Iqbal",
+        "address": "Block 7, Gulshan-e-Iqbal, Near KDA Chowrangi, Karachi",
+        "lat": 24.9215,
+        "lng": 67.0969,
+        "capacity": 200,
+        "current_occupancy": 200,
+        "has_medical_staff": true,
+        "operating_hours": "08:00 AM - 10:00 PM",
+        "status": "open",
+        "facilities": [
+            "water",
+            "fans",
+            "ORS_packets",
+            "first_aid",
+            "nurse_on_duty"
+        ],
+        "note": "approximately 13 additional people received relief and medical attention at the center, center is now fully occupied"
+    }
+]

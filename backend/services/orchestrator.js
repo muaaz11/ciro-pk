@@ -1,7 +1,7 @@
-import { runDetectionAgent } from '../../agents/detectionAgent.js';
-import { runPlanningAgent } from '../../agents/planningAgent.js';
-import { runExecutionAgent } from '../../agents/executionAgent.js';
-import { runAntigravityAgent } from '../../agents/antigravityAgent.js';
+import { runDetectionAgent } from '../agents/detectionAgent.js';
+import { runPlanningAgent } from '../agents/planningAgent.js';
+import { runExecutionAgent } from '../agents/executionAgent.js';
+import { runAntigravityAgent } from '../agents/antigravityAgent.js';
 import { pool } from '../database.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataPath = path.join(__dirname, '../../data');
+const dataPath = path.join(__dirname, '../data');
 
 async function readDataFile(filename) {
   try {

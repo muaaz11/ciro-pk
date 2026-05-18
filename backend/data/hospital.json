@@ -1,0 +1,50 @@
+[
+    {
+        "id": "H004",
+        "name": "Liaquat National Hospital",
+        "area": "Gulshan-e-Iqbal / Bahadurabad",
+        "address": "National Stadium Road, Bahadurabad, Karachi",
+        "lat": 24.8945,
+        "lng": 67.0768,
+        "emergency_beds_total": 80,
+        "emergency_beds_available": 0,
+        "heatstroke_cases_today": 82,
+        "status": "operational",
+        "contact_number": "+92-21-111-800-800",
+        "type": "semi-government",
+        "emergency_available_24_7": true,
+        "note": "20 additional patients admitted due to heatstroke, hospital is fully occupied"
+    },
+    {
+        "id": "H005",
+        "name": "Agakhan University Hospital",
+        "area": "Garden",
+        "address": "Stadium Road, Karachi",
+        "lat": 24.8765,
+        "lng": 67.0689,
+        "emergency_beds_total": 100,
+        "emergency_beds_available": 15,
+        "heatstroke_cases_today": 60,
+        "status": "operational",
+        "contact_number": "+92-21-34930051",
+        "type": "private",
+        "emergency_available_24_7": true,
+        "note": "Has 15 emergency beds remaining"
+    },
+    {
+        "id": "H006",
+        "name": "Jinnah Postgraduate Medical Centre (JPMC)",
+        "area": "Saddar",
+        "address": "Rafiqui Shaheed Road, Karachi",
+        "lat": 24.8517,
+        "lng": 67.0331,
+        "emergency_beds_total": 150,
+        "emergency_beds_available": 35,
+        "heatstroke_cases_today": 110,
+        "status": "operational",
+        "contact_number": "+92-21-99201300",
+        "type": "government",
+        "emergency_available_24_7": true,
+        "note": "Fully equipped government response hospital"
+    }
+]
