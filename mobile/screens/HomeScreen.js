@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator, TextInput, Animated } from 'react-native';
 import * as Location from 'expo-location';
 import { app_url } from '../url';
 
@@ -8,6 +8,25 @@ export default function HomeScreen({ navigation }) {
   const [weather, setWeather] = useState(null);
   const [customTemp, setCustomTemp] = useState('');
   const [overviewData, setOverviewData] = useState(null);
+
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.4,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
     fetchWeather();
@@ -115,105 +134,134 @@ export default function HomeScreen({ navigation }) {
   const badge = getBadgeState();
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Live Weather Status (Karachi)</Text>
-        <View style={[styles.badge, { backgroundColor: badge.color }]}>
-          <Text style={styles.badgeText}>{badge.text}</Text>
+    <View style={{ flex: 1, backgroundColor: '#0A0A0A' }}>
+      <ScrollView style={styles.container}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Live Weather Status (Karachi)</Text>
+          <View style={[styles.badge, { backgroundColor: badge.color }]}>
+            <Text style={styles.badgeText}>{badge.text}</Text>
+          </View>
+
+          {weather ? (
+            <>
+              <Text style={styles.temperature}>{weather.temperature_celsius}°C</Text>
+              <Text style={styles.feelsLike}>Feels like: {weather.feels_like}°C | {weather.description}</Text>
+            </>
+          ) : (
+            <ActivityIndicator size="large" color="#FF6F00" style={{ marginVertical: 20 }} />
+          )}
         </View>
 
-        {weather ? (
-          <>
-            <Text style={styles.temperature}>{weather.temperature_celsius}°C</Text>
-            <Text style={styles.feelsLike}>Feels like: {weather.feels_like}°C | {weather.description}</Text>
-          </>
-        ) : (
-          <ActivityIndicator size="large" color="#FF6F00" style={{ marginVertical: 20 }} />
+        <View style={styles.row}>
+          <View style={[styles.card, styles.halfCard]}>
+            <Text style={styles.statNumber}>{overviewData ? overviewData.active_crises.length : 0}</Text>
+            <Text style={styles.statLabel}>Active Incidents</Text>
+          </View>
+          <View style={[styles.card, styles.halfCard]}>
+            <Text style={[styles.statNumber, {color: overviewData?.system_health_score < 50 ? '#D32F2F' : '#4CAF50'}]}>
+               {overviewData ? overviewData.system_health_score : 100}
+            </Text>
+            <Text style={styles.statLabel}>System Health</Text>
+          </View>
+        </View>
+
+        {/* --- VOICE REPORT BANNER --- */}
+        <View style={styles.voiceBanner}>
+          <View style={styles.voiceBannerContent}>
+            <Text style={styles.voiceBannerTitle}>🎙️ Report by Voice</Text>
+            <Text style={styles.voiceBannerSubtitle}>Speak in English, Urdu, or Roman Urdu</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.voiceBannerBtn}
+            onPress={() => navigation.navigate('VoiceCommand')}
+          >
+            <Text style={styles.voiceBannerBtnText}>Try Now →</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* --- CRISIS OVERVIEW --- */}
+        {overviewData && overviewData.active_crises.length > 0 && (
+           <View style={{marginTop: 10, marginBottom: 20}}>
+              <Text style={styles.cardTitle}>City Crisis Overview</Text>
+              {overviewData.active_crises.map((c, i) => (
+                 <View key={i} style={{backgroundColor: '#1A1A1A', padding: 12, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: c.severity === 'CRITICAL' ? '#D32F2F' : c.severity === 'HIGH' ? '#FF9800' : '#4CAF50'}}>
+                    <Text style={{color: '#FFF', fontWeight: 'bold'}}>{c.id}</Text>
+                    <Text style={{color: '#AAA', fontSize: 12}}>{c.location}</Text>
+                    <Text style={{color: c.severity === 'CRITICAL' ? '#D32F2F' : '#FF9800', fontSize: 10, marginTop: 4, fontWeight: 'bold'}}>SEVERITY: {c.severity}</Text>
+                 </View>
+              ))}
+           </View>
         )}
-      </View>
 
-      <View style={styles.row}>
-        <View style={[styles.card, styles.halfCard]}>
-          <Text style={styles.statNumber}>{overviewData ? overviewData.active_crises.length : 0}</Text>
-          <Text style={styles.statLabel}>Active Incidents</Text>
-        </View>
-        <View style={[styles.card, styles.halfCard]}>
-          <Text style={[styles.statNumber, {color: overviewData?.system_health_score < 50 ? '#D32F2F' : '#4CAF50'}]}>
-             {overviewData ? overviewData.system_health_score : 100}
-          </Text>
-          <Text style={styles.statLabel}>System Health</Text>
-        </View>
-      </View>
-
-      {/* --- CRISIS OVERVIEW --- */}
-      {overviewData && overviewData.active_crises.length > 0 && (
-         <View style={{marginTop: 10, marginBottom: 20}}>
-            <Text style={styles.cardTitle}>City Crisis Overview</Text>
-            {overviewData.active_crises.map((c, i) => (
-               <View key={i} style={{backgroundColor: '#1A1A1A', padding: 12, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: c.severity === 'CRITICAL' ? '#D32F2F' : c.severity === 'HIGH' ? '#FF9800' : '#4CAF50'}}>
-                  <Text style={{color: '#FFF', fontWeight: 'bold'}}>{c.id}</Text>
-                  <Text style={{color: '#AAA', fontSize: 12}}>{c.location}</Text>
-                  <Text style={{color: c.severity === 'CRITICAL' ? '#D32F2F' : '#FF9800', fontSize: 10, marginTop: 4, fontWeight: 'bold'}}>SEVERITY: {c.severity}</Text>
+        {/* --- IMPACT DASHBOARD --- */}
+        <View style={{marginTop: 10, marginBottom: 20}}>
+           <Text style={styles.cardTitle}>Global Impact Dashboard</Text>
+           <View style={{backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12}}>
+               <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12}}>
+                   <View>
+                       <Text style={{color: '#888', fontSize: 12}}>Congestion Reduced</Text>
+                       <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                           <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>85%</Text>
+                           <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 35%</Text>
+                       </View>
+                   </View>
+                   <View>
+                       <Text style={{color: '#888', fontSize: 12}}>Time Saved</Text>
+                       <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>12 mins</Text>
+                   </View>
                </View>
-            ))}
-         </View>
-      )}
+               <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                   <View>
+                       <Text style={{color: '#888', fontSize: 12}}>Hospital Load Shift</Text>
+                       <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                           <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>100%</Text>
+                           <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 80%</Text>
+                       </View>
+                   </View>
+                   <View>
+                       <Text style={{color: '#888', fontSize: 12}}>Lives Impacted</Text>
+                       <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>+3</Text>
+                   </View>
+               </View>
+           </View>
+        </View>
 
-      {/* --- IMPACT DASHBOARD --- */}
-      <View style={{marginTop: 10, marginBottom: 20}}>
-         <Text style={styles.cardTitle}>Global Impact Dashboard</Text>
-         <View style={{backgroundColor: '#1A1A1A', padding: 16, borderRadius: 12}}>
-             <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12}}>
-                 <View>
-                     <Text style={{color: '#888', fontSize: 12}}>Congestion Reduced</Text>
-                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                         <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>85%</Text>
-                         <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 35%</Text>
-                     </View>
-                 </View>
-                 <View>
-                     <Text style={{color: '#888', fontSize: 12}}>Time Saved</Text>
-                     <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>12 mins</Text>
-                 </View>
-             </View>
-             <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                 <View>
-                     <Text style={{color: '#888', fontSize: 12}}>Hospital Load Shift</Text>
-                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                         <Text style={{color: '#D32F2F', fontSize: 14, textDecorationLine: 'line-through'}}>100%</Text>
-                         <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold', marginLeft: 8}}>→ 80%</Text>
-                     </View>
-                 </View>
-                 <View>
-                     <Text style={{color: '#888', fontSize: 12}}>Lives Impacted</Text>
-                     <Text style={{color: '#4CAF50', fontSize: 18, fontWeight: 'bold'}}>+3</Text>
-                 </View>
-             </View>
-         </View>
+        <Text style={{ color: '#888', marginTop: 20, marginBottom: 10, textAlign: 'center', fontWeight: 'bold' }}>SIMULATE CUSTOM TEMPERATURE</Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+          <TextInput
+            style={styles.tempInput}
+            value={customTemp}
+            onChangeText={setCustomTemp}
+            keyboardType="numeric"
+            placeholder="Leave empty to use real weather..."
+            placeholderTextColor="#888"
+          />
+          <Text style={{ color: '#FFF', fontSize: 18, marginLeft: 10, fontWeight: 'bold' }}>°C</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.demoBtn}
+          onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : 44)}
+          disabled={loading}
+        >
+          <Text style={styles.demoBtnText}>{loading ? 'Injecting...' : 'Trigger Demo Incident'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* FAB Voice Button */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => navigation.navigate('VoiceCommand')}
+          activeOpacity={0.8}
+        >
+          <Text style={{ fontSize: 24 }}>🎙️</Text>
+          <Animated.View style={[styles.fabBadge, { opacity: pulseAnim }]} />
+        </TouchableOpacity>
+        <Text style={styles.fabLabel}>Voice Report</Text>
       </View>
-
-      <Text style={{ color: '#888', marginTop: 20, marginBottom: 10, textAlign: 'center', fontWeight: 'bold' }}>SIMULATE CUSTOM TEMPERATURE</Text>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-        <TextInput
-          style={styles.tempInput}
-          value={customTemp}
-          onChangeText={setCustomTemp}
-          keyboardType="numeric"
-          placeholder="Leave empty to use real weather..."
-          placeholderTextColor="#888"
-        />
-        <Text style={{ color: '#FFF', fontSize: 18, marginLeft: 10, fontWeight: 'bold' }}>°C</Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.demoBtn}
-        onPress={() => triggerDemo(customTemp.trim() ? Number(customTemp) : 44)}
-        disabled={loading}
-      >
-        <Text style={styles.demoBtnText}>{loading ? 'Injecting...' : 'Trigger Demo Incident'}</Text>
-      </TouchableOpacity>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -231,5 +279,84 @@ const styles = StyleSheet.create({
   statLabel: { color: '#888888', fontSize: 14, textAlign: 'center', marginTop: 4 },
   demoBtn: { backgroundColor: '#FF6F00', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 20 },
   demoBtnText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
-  tempInput: { flex: 1, backgroundColor: '#1A1A1A', color: '#FFFFFF', fontSize: 18, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#333' }
+  tempInput: { flex: 1, backgroundColor: '#1A1A1A', color: '#FFFFFF', fontSize: 18, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
+  voiceBanner: {
+    backgroundColor: '#111827',
+    borderLeftWidth: 4,
+    borderLeftColor: '#00D4FF',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  voiceBannerContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  voiceBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  voiceBannerSubtitle: {
+    color: '#8892A4',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  voiceBannerBtn: {
+    backgroundColor: '#00D4FF1E',
+    borderColor: '#00D4FF',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  voiceBannerBtnText: {
+    color: '#00D4FF',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#111827',
+    borderWidth: 2,
+    borderColor: '#00D4FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00D4FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    position: 'relative',
+  },
+  fabBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF4444',
+  },
+  fabLabel: {
+    color: '#00D4FF',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginTop: 4,
+    textShadowColor: '#000000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
 });

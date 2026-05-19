@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 
@@ -10,8 +11,10 @@ import ResourcesScreen from './screens/ResourcesScreen';
 import AgentTraceScreen from './screens/AgentTraceScreen';
 import MapScreen from './screens/MapScreen';
 import AmbulanceScreen from './screens/AmbulanceScreen';
+import VoiceCommandScreen from './screens/VoiceCommandScreen';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 const MyTheme = {
   ...DarkTheme,
@@ -25,31 +28,40 @@ const MyTheme = {
   },
 };
 
+function TabNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerStyle: { backgroundColor: '#1A1A1A', shadowColor: 'transparent', elevation: 0 },
+        headerTintColor: '#FFFFFF',
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          if (route.name === 'Home') iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'AgentTrace') iconName = focused ? 'terminal' : 'terminal-outline';
+          else if (route.name === 'DriverHub') iconName = focused ? 'car' : 'car-outline';
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#D32F2F',
+        tabBarInactiveTintColor: 'gray',
+        tabBarStyle: { backgroundColor: '#1A1A1A', borderTopWidth: 0 },
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'CIRO Dashboard' }} />
+      <Tab.Screen name="AgentTrace" component={AgentTraceScreen} options={{ title: 'AI Trace' }} />
+      <Tab.Screen name="DriverHub" component={AmbulanceScreen} options={{ title: 'Driver Hub' }} />
+    </Tab.Navigator>
+  );
+}
+
 export default function App() {
   return (
     <>
       <StatusBar style="light" />
       <NavigationContainer theme={MyTheme}>
-        <Tab.Navigator
-          screenOptions={({ route }) => ({
-            headerStyle: { backgroundColor: '#1A1A1A', shadowColor: 'transparent', elevation: 0 },
-            headerTintColor: '#FFFFFF',
-            tabBarIcon: ({ focused, color, size }) => {
-              let iconName;
-              if (route.name === 'Home') iconName = focused ? 'home' : 'home-outline';
-              else if (route.name === 'AgentTrace') iconName = focused ? 'terminal' : 'terminal-outline';
-              else if (route.name === 'DriverHub') iconName = focused ? 'car' : 'car-outline';
-              return <Ionicons name={iconName} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: '#D32F2F',
-            tabBarInactiveTintColor: 'gray',
-            tabBarStyle: { backgroundColor: '#1A1A1A', borderTopWidth: 0 },
-          })}
-        >
-          <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'CIRO Dashboard' }} />
-          <Tab.Screen name="AgentTrace" component={AgentTraceScreen} options={{ title: 'AI Trace' }} />
-          <Tab.Screen name="DriverHub" component={AmbulanceScreen} options={{ title: 'Driver Hub' }} />
-        </Tab.Navigator>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="MainTabs" component={TabNavigator} />
+          <Stack.Screen name="VoiceCommand" component={VoiceCommandScreen} />
+        </Stack.Navigator>
       </NavigationContainer>
     </>
   );

@@ -2,6 +2,7 @@ import { runDetectionAgent } from '../agents/detectionAgent.js';
 import { runPlanningAgent } from '../agents/planningAgent.js';
 import { runExecutionAgent } from '../agents/executionAgent.js';
 import { runAntigravityAgent } from '../agents/antigravityAgent.js';
+import { classifySignalIntent } from '../agents/intentClassifier.js';
 import { pool } from '../database.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -124,6 +125,23 @@ export class Orchestrator {
   }
 
   async handleNewSignal(signal) {
+    // Normalize signal type to voice_input, text_input, weather_input, or system_mock_input
+    const source = (signal.source || '').toLowerCase();
+    const type = (signal.signal_type || '').toLowerCase();
+
+    let normalizedType = 'text_input';
+    if (source === 'voice' || type === 'voice_report' || type === 'voice_input') {
+      normalizedType = 'voice_input';
+    } else if (source === 'app_demo' || type === 'system_mock_input' || type === 'heatstroke_case') {
+      normalizedType = 'system_mock_input';
+    } else if (type === 'weather' || type === 'weather_input') {
+      normalizedType = 'weather_input';
+    } else {
+      normalizedType = 'text_input';
+    }
+
+    signal.signal_type = normalizedType;
+
     this.io.emit('signal_received', signal);
     const incidentId = `INC-${Date.now()}`;
     // Run parallel processing workflow independently!
@@ -135,11 +153,23 @@ export class Orchestrator {
       const hospitals = await readDataFile('hospital.json');
       const coolingCenters = await readDataFile('cooling_centers.json');
       const currentTime = new Date().toISOString();
-      let weather = { temperature_celsius: 45, humidity_percent: 60 }; // Fallback Mock
 
+      // Classify intent before running detection
+      const intentResult = await classifySignalIntent(signalsToProcess);
+      const intent = intentResult.intent;
+      console.log(`[${incidentId}] Classified Intent: ${intent} (${intentResult.reasoning})`);
+
+      const firstSignal = signalsToProcess[0] || {};
+      const incidentLat = firstSignal.latitude || 24.92;
+      const incidentLng = firstSignal.longitude || 67.09;
+
+      let weather = { temperature_celsius: 45, humidity_percent: 60 }; // Fallback Mock
       const mockSignal = signalsToProcess.find(s => s.mock_temperature !== undefined);
 
-      if (mockSignal && mockSignal.mock_temperature) {
+      // If voice/text describes accident, flood, or medical scenario, ignore mock_temperature entirely
+      const ignoreMockTemp = (intent === 'accident' || intent === 'medical_emergency' || intent === 'flood');
+
+      if (mockSignal && mockSignal.mock_temperature && !ignoreMockTemp) {
         console.log(`[${incidentId}] Using MOCK temperature: ${mockSignal.mock_temperature}C for demo scenario`);
         weather = {
           temperature_celsius: mockSignal.mock_temperature,
@@ -164,10 +194,6 @@ export class Orchestrator {
         }
       }
 
-      const firstSignal = signalsToProcess[0] || {};
-      const incidentLat = firstSignal.latitude || 24.92;
-      const incidentLng = firstSignal.longitude || 67.09;
-
       // --- ANTIGRAVITY BRAIN LAYER ---
       this.io.emit('agent_status', { incidentId, agent: 'Antigravity', status: 'thinking' });
       const agDecision = await runAntigravityAgent(signalsToProcess, weather, currentTime);
@@ -180,8 +206,10 @@ export class Orchestrator {
         this.io.emit('agent_status', { incidentId, agent: 'Detection', status: 'thinking' });
         await new Promise(r => setTimeout(r, 2000));
 
-        // HARD LIMIT: If temp is below 38C, it's mathematically not a heatwave.
-        if (weather.temperature_celsius < 38) {
+        // Heatwave logic (e.g. temperature >= 38C) must only apply when signal_type = weather_input OR explicitly heatwave intent
+        const isHeatwaveRelated = (firstSignal.signal_type === 'weather_input') || (intent === 'heatwave');
+
+        if (isHeatwaveRelated && weather.temperature_celsius < 38) {
           console.log(`[${incidentId}] Hard rejecting: Temp is ${weather.temperature_celsius}C (Below 38C limit)`);
           detection = {
             crisis_detected: false,
@@ -191,7 +219,7 @@ export class Orchestrator {
             reasoning: `The current temperature is ${weather.temperature_celsius}°C. A heatwave crisis requires temperatures of 38°C or higher. Any reported collapses are likely unrelated to weather. No escalation needed.`
           };
         } else {
-          detection = await runDetectionAgent(signalsToProcess, weather, currentTime);
+          detection = await runDetectionAgent(signalsToProcess, weather, currentTime, intent);
           if (agDecision.severity_level) {
             detection.severity = agDecision.severity_level;
           }
