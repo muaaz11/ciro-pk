@@ -130,6 +130,21 @@ io.on('connection', (socket) => {
     orchestrator.acceptDispatch(incidentId);
   });
 
+  socket.on('injectSignal', (data) => {
+    console.log('Signal received via Socket:', data);
+    const { text, location, source, timestamp, mock_temperature } = data;
+    orchestrator.handleNewSignal({
+      text,
+      location_mentioned: location ? (location.name || "Karachi") : "Karachi",
+      signal_type: 'voice_report',
+      source: source || 'voice',
+      latitude: location ? location.latitude : 24.90,
+      longitude: location ? location.longitude : 67.08,
+      timestamp,
+      mock_temperature: mock_temperature !== undefined ? mock_temperature : 44
+    });
+  });
+
   socket.on('get_active_dispatch', () => {
     console.log('Client requested active dispatch state');
     orchestrator.syncActiveDispatch(socket);

@@ -53,7 +53,14 @@ export default ({ config }) => {
         },
 
         plugins: [
-            "expo-font"
+            "expo-font",
+            [
+                "expo-speech-recognition",
+                {
+                    "microphonePermission": "CIRO needs microphone access to record emergency voice reports.",
+                    "speechRecognitionPermission": "CIRO needs speech recognition to transcribe your emergency report."
+                }
+            ]
         ]
     }
 }
