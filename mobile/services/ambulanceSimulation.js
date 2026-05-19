@@ -1,6 +1,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CIRO AMBULANCE SIMULATION ENGINE
-// State machine + countdown timer + smooth interpolation
+// CIRO AMBULANCE SIMULATION ENGINE WITH OSRM STREET ROUTING
+// State machine + countdown timer + smooth street-snapped routing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export const STATES = {
@@ -32,12 +32,6 @@ export const STATE_COLORS = {
   ARRIVED_AT_HOSPITAL:  '#4CAF50',
   COMPLETED:            '#4CAF50',
 };
-
-// Linear interpolation between two coordinates
-export const lerpCoord = (start, end, t) => ({
-  latitude:  start.latitude  + (end.latitude  - start.latitude)  * t,
-  longitude: start.longitude + (end.longitude - start.longitude) * t,
-});
 
 // Haversine distance in km
 export const getDistanceKm = (a, b) => {
@@ -72,20 +66,49 @@ export const formatTimer = (secs) => {
   return `${m}:${s}`;
 };
 
+// Fetch real-world street routes from OSRM
+export async function fetchOSRMRoute(start, end) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("OSRM route fetch failed");
+    const data = await res.json();
+    if (!data.routes || data.routes.length === 0) return [start, end];
+    
+    return data.routes[0].geometry.coordinates.map(pt => ({
+      latitude: pt[1],
+      longitude: pt[0]
+    }));
+  } catch (error) {
+    console.error("OSRM Route error:", error);
+    return [start, end];
+  }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SIMULATION RUNNER
-// Call start(), get tick callbacks, call stop() on cleanup
+// STREET-SNAPPED SIMULATION RUNNER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const EN_ROUTE_DURATION  = 45;  // seconds hospital → patient
-const TRANSPORT_DURATION = 120; // seconds patient → hospital (countdown)
+const EN_ROUTE_DURATION  = 30;  // seconds hospital → patient
+const TRANSPORT_DURATION = 60;  // seconds patient → hospital (countdown)
 const ARRIVED_PAUSE      = 2;   // seconds pause at patient before transport
 
-export function createSimulation({ hospitalCoords, incidentCoords, onTick, onComplete }) {
+export function createSimulation({ 
+  hospitalCoords, 
+  incidentCoords, 
+  patientRoute = [], 
+  hospitalRoute = [], 
+  onTick, 
+  onComplete 
+}) {
   let intervalId  = null;
   let phase       = 'EN_ROUTE';   // EN_ROUTE | ARRIVED_PAUSE | TRANSPORT
   let elapsed     = 0;            // seconds elapsed in current phase
   let transportRemaining = TRANSPORT_DURATION;
+
+  // Fallbacks if route was not provided or failed to load
+  const pRoute = patientRoute.length > 0 ? patientRoute : [hospitalCoords, incidentCoords];
+  const hRoute = hospitalRoute.length > 0 ? hospitalRoute : [incidentCoords, hospitalCoords];
 
   const stop = () => {
     if (intervalId) { clearInterval(intervalId); intervalId = null; }
@@ -98,7 +121,7 @@ export function createSimulation({ hospitalCoords, incidentCoords, onTick, onCom
     onTick({
       state:     STATES.EN_ROUTE_TO_PATIENT,
       position:  hospitalCoords,
-      bearing:   getBearing(hospitalCoords, incidentCoords),
+      bearing:   getBearing(hospitalCoords, pRoute[1] || incidentCoords),
       countdown: null,
       progress:  0,
     });
@@ -108,12 +131,14 @@ export function createSimulation({ hospitalCoords, incidentCoords, onTick, onCom
 
       if (phase === 'EN_ROUTE') {
         const t = Math.min(elapsed / EN_ROUTE_DURATION, 1);
-        const pos = lerpCoord(hospitalCoords, incidentCoords, t);
+        const index = Math.min(Math.floor(t * (pRoute.length - 1)), pRoute.length - 1);
+        const pos = pRoute[index];
+        const nextPos = pRoute[Math.min(index + 1, pRoute.length - 1)] || pos;
 
         onTick({
           state:     STATES.EN_ROUTE_TO_PATIENT,
           position:  pos,
-          bearing:   getBearing(hospitalCoords, incidentCoords),
+          bearing:   getBearing(pos, nextPos),
           countdown: null,
           progress:  Math.round(t * 50), // 0-50%
         });
@@ -138,7 +163,7 @@ export function createSimulation({ hospitalCoords, incidentCoords, onTick, onCom
           onTick({
             state:     STATES.TRANSPORTING_PATIENT,
             position:  incidentCoords,
-            bearing:   getBearing(incidentCoords, hospitalCoords),
+            bearing:   getBearing(incidentCoords, hRoute[1] || hospitalCoords),
             countdown: formatTimer(TRANSPORT_DURATION),
             progress:  50,
           });
@@ -148,13 +173,15 @@ export function createSimulation({ hospitalCoords, incidentCoords, onTick, onCom
         transportRemaining = Math.max(TRANSPORT_DURATION - elapsed, 0);
         const t   = elapsed / TRANSPORT_DURATION;
         const tClamped = Math.min(t, 1);
-        const pos = lerpCoord(incidentCoords, hospitalCoords, tClamped);
+        const index = Math.min(Math.floor(tClamped * (hRoute.length - 1)), hRoute.length - 1);
+        const pos = hRoute[index];
+        const nextPos = hRoute[Math.min(index + 1, hRoute.length - 1)] || pos;
         const progress = 50 + Math.round(tClamped * 50); // 50-100%
 
         onTick({
           state:     STATES.TRANSPORTING_PATIENT,
           position:  pos,
-          bearing:   getBearing(incidentCoords, hospitalCoords),
+          bearing:   getBearing(pos, nextPos),
           countdown: formatTimer(transportRemaining),
           progress,
         });
