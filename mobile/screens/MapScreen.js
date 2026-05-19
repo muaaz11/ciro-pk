@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import io from 'socket.io-client';
 import { app_url } from '../url';
 import { Ionicons } from '@expo/vector-icons';
+
+const isValidCoordinate = (coords) => {
+  return (
+    coords &&
+    typeof coords.latitude === 'number' &&
+    typeof coords.longitude === 'number' &&
+    !isNaN(coords.latitude) &&
+    !isNaN(coords.longitude) &&
+    coords.latitude >= -90 &&
+    coords.latitude <= 90 &&
+    coords.longitude >= -180 &&
+    coords.longitude <= 180
+  );
+};
 
 export default function MapScreen() {
   const [ambulance, setAmbulance] = useState(null);
@@ -50,12 +64,13 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <MapView
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={karachiRegion}
         userInterfaceStyle="dark"
       >
         {/* Render Active Incident */}
-        {incident && (
+        {isValidCoordinate(incident) && (
           <Marker
             coordinate={{ latitude: incident.latitude, longitude: incident.longitude }}
             title={incident.title}
@@ -67,7 +82,7 @@ export default function MapScreen() {
         )}
 
         {/* Render Moving Ambulances */}
-        {ambulance && (
+        {isValidCoordinate(ambulance) && (
           <Marker
             coordinate={{ latitude: ambulance.latitude, longitude: ambulance.longitude }}
             title={`Ambulance - En Route (${Math.round(ambulance.progress)}%)`}
@@ -79,7 +94,7 @@ export default function MapScreen() {
         )}
 
         {/* Render Hospital Source */}
-        {hospital && (
+        {isValidCoordinate(hospital) && (
           <Marker
             coordinate={{ latitude: hospital.latitude, longitude: hospital.longitude }}
             title={hospital.name}
@@ -89,7 +104,7 @@ export default function MapScreen() {
         )}
 
         {/* Path line from Hospital to Incident */}
-        {ambulance && incident && hospital && (
+        {isValidCoordinate(ambulance) && isValidCoordinate(incident) && isValidCoordinate(hospital) && (
           <Polyline
             coordinates={[
               { latitude: hospital.latitude, longitude: hospital.longitude }, // Hospital

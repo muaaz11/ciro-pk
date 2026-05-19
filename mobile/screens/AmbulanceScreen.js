@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   Animated, Dimensions, ScrollView, ActivityIndicator
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import io from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import { app_url } from '../url';
@@ -15,6 +15,73 @@ import {
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const KARACHI = { latitude: 24.90, longitude: 67.08, latitudeDelta: 0.09, longitudeDelta: 0.09 };
+
+const isValidCoordinate = (coords) => {
+  return (
+    coords &&
+    typeof coords.latitude === 'number' &&
+    typeof coords.longitude === 'number' &&
+    !isNaN(coords.latitude) &&
+    !isNaN(coords.longitude) &&
+    coords.latitude >= -90 &&
+    coords.latitude <= 90 &&
+    coords.longitude >= -180 &&
+    coords.longitude <= 180
+  );
+};
+
+const getValidRoute = (route) => {
+  if (!Array.isArray(route)) return [];
+  return route.filter(isValidCoordinate);
+};
+
+class MapErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error) {
+    console.log('MapView crashed:', error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{
+          flex: 1, backgroundColor: '#12131C',
+          justifyContent: 'center', alignItems: 'center',
+          padding: 20
+        }}>
+          <Ionicons name="map-outline" size={48} color="#FF6F00" />
+          <Text style={{ color: '#FFF', fontSize: 16, 
+            fontWeight: 'bold', marginTop: 12 }}>
+            Map Unavailable
+          </Text>
+          <Text style={{ color: '#888', fontSize: 12, 
+            textAlign: 'center', marginTop: 8 }}>
+            Coordinate tracking active
+          </Text>
+          {this.props.mission && (
+            <View style={{ marginTop: 20, width: '100%' }}>
+              <Text style={{ color: '#888', fontSize: 11 }}>
+                Incident: {this.props.mission.incidentArea}
+              </Text>
+              <Text style={{ color: '#888', fontSize: 11 }}>
+                Hospital: {this.props.mission.hospitalName}
+              </Text>
+              <Text style={{ color: '#00E676', fontSize: 11 }}>
+                Progress: {this.props.mission.progress}%
+              </Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function AmbulanceScreen({ navigation }) {
   const [missions, setMissions] = useState({});
@@ -53,8 +120,8 @@ export default function AmbulanceScreen({ navigation }) {
       if (agent === 'Ambulance' && status === 'waiting_acceptance') {
         const routeInfo = data?.hospital_routing || {};
         const name      = routeInfo.recommendation || 'Aga Khan University Hospital';
-        const incCoords = data.incident_coords  || { latitude: 24.92,   longitude: 67.09 };
-        const hosCoords = data.hospital_coords  || { latitude: 24.8765, longitude: 67.0689 };
+        const incCoords = isValidCoordinate(data.incident_coords) ? data.incident_coords : { latitude: 24.92, longitude: 67.09 };
+        const hosCoords = isValidCoordinate(data.hospital_coords) ? data.hospital_coords : { latitude: 24.8765, longitude: 67.0689 };
 
         // Initialize with direct fallback routes
         const initMission = {
@@ -82,30 +149,35 @@ export default function AmbulanceScreen({ navigation }) {
 
         setSelectedIncidentId(incidentId);
 
-        // Fetch high-fidelity street paths dynamically from OSRM
         Promise.all([
-          fetchOSRMRoute(hosCoords, incCoords), // Route to Patient
-          fetchOSRMRoute(incCoords, hosCoords)  // Route to Hospital
+          fetchOSRMRoute(hosCoords, incCoords),
+          fetchOSRMRoute(incCoords, hosCoords)
         ]).then(([pRoute, hRoute]) => {
+          const validPRoute = Array.isArray(pRoute) ? pRoute.filter(isValidCoordinate) : [];
+          const validHRoute = Array.isArray(hRoute) ? hRoute.filter(isValidCoordinate) : [];
           setMissions(prev => {
             if (!prev[incidentId]) return prev;
             return {
               ...prev,
               [incidentId]: {
                 ...prev[incidentId],
-                patientRoute: pRoute,
-                hospitalRoute: hRoute
+                patientRoute: validPRoute.length >= 2 ? validPRoute : [hosCoords, incCoords],
+                hospitalRoute: validHRoute.length >= 2 ? validHRoute : [incCoords, hosCoords]
               }
             };
           });
-        }).catch(err => console.log("OSRM route fetch ignored:", err));
+        }).catch(() => {
+          console.log('OSRM failed, using straight line fallback');
+        });
 
-        mapRef.current?.animateToRegion({
-          latitude:      (incCoords.latitude  + hosCoords.latitude)  / 2,
-          longitude:     (incCoords.longitude + hosCoords.longitude) / 2,
-          latitudeDelta:  Math.abs(incCoords.latitude  - hosCoords.latitude)  * 2 || 0.05,
-          longitudeDelta: Math.abs(incCoords.longitude - hosCoords.longitude) * 2 || 0.05,
-        }, 1200);
+        if (isValidCoordinate(incCoords) && isValidCoordinate(hosCoords)) {
+          mapRef.current?.animateToRegion({
+            latitude:      (incCoords.latitude  + hosCoords.latitude)  / 2,
+            longitude:     (incCoords.longitude + hosCoords.longitude) / 2,
+            latitudeDelta:  Math.max(Math.abs(incCoords.latitude  - hosCoords.latitude)  * 2, 0.01) || 0.05,
+            longitudeDelta: Math.max(Math.abs(incCoords.longitude - hosCoords.longitude) * 2, 0.01) || 0.05,
+          }, 1200);
+        }
       }
     });
 
@@ -152,9 +224,14 @@ export default function AmbulanceScreen({ navigation }) {
            };
         });
 
-        if (selectedIncidentId === incId) {
+        if (selectedIncidentId === incId && isValidCoordinate(position)) {
           mapRef.current?.animateCamera(
-            { center: position, zoom: 14, heading: b, pitch: 40 },
+            { 
+              center: position, 
+              zoom: 14, 
+              heading: typeof b === 'number' && !isNaN(b) ? b : 0, 
+              pitch: 40 
+            },
             { duration: 900 }
           );
         }
@@ -215,105 +292,112 @@ export default function AmbulanceScreen({ navigation }) {
     <View style={s.root}>
       {/* ── MAP ──────────────────────────────────────────────── */}
       <View style={s.mapWrap}>
-        <MapView
-          ref={mapRef}
-          style={s.map}
-          initialRegion={KARACHI}
-          userInterfaceStyle="dark"
-          customMapStyle={PREMIUM_NAVY_MAP}
-        >
-          {missionKeys.map(id => {
-             const m = missions[id];
-             const isSelected = id === selectedIncidentId;
-             const isPending = m.status === 'pending';
-             const isMapVisible = m.phase !== STATES.IDLE;
-             const patientPickedUp = [STATES.TRANSPORTING_PATIENT, STATES.ARRIVED_AT_HOSPITAL, STATES.COMPLETED].includes(m.phase);
-             const isNearHospital = getDistanceKm(m.ambulancePos, m.hospitalCoords) < 0.5;
+        <MapErrorBoundary mission={selectedMission}>
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_GOOGLE}
+            style={s.map}
+            initialRegion={isValidCoordinate(KARACHI) ? KARACHI : undefined}
+            userInterfaceStyle="dark"
+          >
+            {missionKeys.map(id => {
+               const m = missions[id];
+               const isSelected = id === selectedIncidentId;
+               const isPending = m.status === 'pending';
+               const isMapVisible = m.phase !== STATES.IDLE;
+               const patientPickedUp = [STATES.TRANSPORTING_PATIENT, STATES.ARRIVED_AT_HOSPITAL, STATES.COMPLETED].includes(m.phase);
+               const isNearHospital = isValidCoordinate(m.ambulancePos) && isValidCoordinate(m.hospitalCoords) && getDistanceKm(m.ambulancePos, m.hospitalCoords) < 0.5;
 
-             if (!isMapVisible) return null;
+               if (!isMapVisible) return null;
 
-             return (
-               <React.Fragment key={id}>
-                 {/* Planned dynamic street route - Glowing Dotted Neon Orange */}
-                 {isPending && m.patientRoute && isSelected && (
-                   <Polyline 
-                     coordinates={m.patientRoute} 
-                     strokeColor="#FF6F00" 
-                     strokeWidth={4} 
-                     lineDashPattern={[8, 6]} 
-                   />
-                 )}
+               const validPRoute = getValidRoute(m.patientRoute);
+               const validHRoute = getValidRoute(m.hospitalRoute);
 
-                 {/* Blue street-snapped line: hospital → patient */}
-                 {!isPending && m.phase === STATES.EN_ROUTE_TO_PATIENT && m.patientRoute && isSelected && (
-                   <Polyline 
-                     coordinates={m.patientRoute} 
-                     strokeColor="#00E5FF" 
-                     strokeWidth={6} 
-                     shadowColor="#00E5FF"
-                     shadowOffset={{ width: 0, height: 0 }}
-                     shadowOpacity={1}
-                     shadowRadius={6}
-                   />
-                 )}
+               return (
+                 <React.Fragment key={id}>
+                   {/* Planned dynamic street route - Glowing Dotted Neon Orange */}
+                   {isPending && isSelected && validPRoute.length >= 2 && (
+                     <Polyline 
+                       coordinates={validPRoute} 
+                       strokeColor="#FF6F00" 
+                       strokeWidth={4} 
+                       lineDashPattern={[8, 6]} 
+                     />
+                   )}
 
-                 {/* Green street-snapped line: patient → hospital */}
-                 {!isPending && m.phase === STATES.TRANSPORTING_PATIENT && m.hospitalRoute && isSelected && (
-                   <Polyline 
-                     coordinates={m.hospitalRoute} 
-                     strokeColor="#00E676" 
-                     strokeWidth={6} 
-                     shadowColor="#00E676"
-                     shadowOffset={{ width: 0, height: 0 }}
-                     shadowOpacity={1}
-                     shadowRadius={6}
-                   />
-                 )}
+                   {/* Blue street-snapped line: hospital → patient */}
+                   {!isPending && m.phase === STATES.EN_ROUTE_TO_PATIENT && isSelected && validPRoute.length >= 2 && (
+                     <Polyline 
+                       coordinates={validPRoute} 
+                       strokeColor="#00E5FF" 
+                       strokeWidth={6} 
+                       shadowColor="#00E5FF"
+                       shadowOffset={{ width: 0, height: 0 }}
+                       shadowOpacity={1}
+                       shadowRadius={6}
+                     />
+                   )}
 
-                 {/* Incident marker */}
-                 {m.incidentCoords && (
-                   <Marker coordinate={m.incidentCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
-                     {patientPickedUp ? (
-                       <View style={[s.markerCircle, { backgroundColor: '#00E676' }]}>
-                         <Ionicons name="checkmark" size={14} color="#FFF" />
-                       </View>
-                     ) : (
-                       <Animated.View style={[s.markerPulse, { opacity: isSelected ? pulseOpacity : 0.8 }]}>
-                         <View style={[s.markerCircle, { backgroundColor: '#FF1744' }]}>
-                           <Ionicons name="flame" size={14} color="#FFF" />
-                         </View>
-                       </Animated.View>
-                     )}
-                   </Marker>
-                 )}
+                   {/* Green street-snapped line: patient → hospital */}
+                   {!isPending && m.phase === STATES.TRANSPORTING_PATIENT && isSelected && validHRoute.length >= 2 && (
+                     <Polyline 
+                       coordinates={validHRoute} 
+                       strokeColor="#00E676" 
+                       strokeWidth={6} 
+                       shadowColor="#00E676"
+                       shadowOffset={{ width: 0, height: 0 }}
+                       shadowOpacity={1}
+                       shadowRadius={6}
+                     />
+                   )}
 
-                 {/* Hospital marker */}
-                 {m.hospitalCoords && (
-                   <Marker coordinate={m.hospitalCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
-                     {isNearHospital && !isPending ? (
-                       <Animated.View style={[s.markerPulse, { transform: [{ scale: isSelected ? hospitalPulse : 1 }] }]}>
+                   {/* Incident marker */}
+                   {isValidCoordinate(m.incidentCoords) && (
+                     <Marker coordinate={m.incidentCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                       {patientPickedUp ? (
                          <View style={[s.markerCircle, { backgroundColor: '#00E676' }]}>
+                           <Ionicons name="checkmark" size={14} color="#FFF" />
+                         </View>
+                       ) : (
+                         <Animated.View style={[s.markerPulse, { opacity: isSelected ? pulseOpacity : 0.8 }]}>
+                           <View style={[s.markerCircle, { backgroundColor: '#FF1744' }]}>
+                             <Ionicons name="flame" size={14} color="#FFF" />
+                           </View>
+                         </Animated.View>
+                       )}
+                     </Marker>
+                   )}
+
+                   {/* Hospital marker */}
+                   {isValidCoordinate(m.hospitalCoords) && (
+                     <Marker coordinate={m.hospitalCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                       {isNearHospital && !isPending ? (
+                         <Animated.View style={[s.markerPulse, { transform: [{ scale: isSelected ? hospitalPulse : 1 }] }]}>
+                           <View style={[s.markerCircle, { backgroundColor: '#00E676' }]}>
+                             <Ionicons name="business" size={14} color="#FFF" />
+                           </View>
+                         </Animated.View>
+                       ) : (
+                         <View style={[s.markerCircle, { backgroundColor: '#00C853' }]}>
                            <Ionicons name="business" size={14} color="#FFF" />
                          </View>
-                       </Animated.View>
-                     ) : (
-                       <View style={[s.markerCircle, { backgroundColor: '#00C853' }]}>
-                         <Ionicons name="business" size={14} color="#FFF" />
-                       </View>
-                     )}
-                   </Marker>
-                 )}
+                       )}
+                     </Marker>
+                   )}
 
-                 {/* Ambulance marker */}
-                 <Marker coordinate={m.ambulancePos} flat rotation={m.bearing} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.5} zIndex={isSelected ? 100 : 10}>
-                   <View style={[s.ambMarker, !isSelected && {borderColor: '#888'}]}>
-                     <Text style={{ fontSize: 24 }}>🚑</Text>
-                   </View>
-                 </Marker>
-               </React.Fragment>
-             );
-          })}
-        </MapView>
+                   {/* Ambulance marker */}
+                   {isValidCoordinate(m.ambulancePos) && (
+                     <Marker coordinate={m.ambulancePos} flat rotation={typeof m.bearing === 'number' && !isNaN(m.bearing) ? m.bearing : 0} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.5} zIndex={isSelected ? 100 : 10}>
+                       <View style={[s.ambMarker, !isSelected && {borderColor: '#888'}]}>
+                         <Text style={{ fontSize: 24 }}>🚑</Text>
+                       </View>
+                     </Marker>
+                   )}
+                 </React.Fragment>
+               );
+            })}
+          </MapView>
+        </MapErrorBoundary>
 
         {selectedMission && (
            <View style={s.headerChip}>
@@ -476,7 +560,14 @@ const s = StyleSheet.create({
   headerText:   { color: '#FFF', fontSize: 13, fontWeight: '700' },
   markerPulse:  { justifyContent: 'center', alignItems: 'center', width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,23,68,0.2)' },
   markerCircle: { width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
-  ambMarker:    { backgroundColor: '#12131C', padding: 4, borderRadius: 99, borderWidth: 2, borderColor: '#00E5FF', shadowColor: '#00E5FF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4 },
+  ambMarker: { 
+    backgroundColor: '#12131C', 
+    padding: 4, 
+    borderRadius: 99, 
+    borderWidth: 2, 
+    borderColor: '#00E5FF',
+    elevation: 8
+  },
 
   // Sheet
   sheet: {
@@ -534,19 +625,3 @@ const s = StyleSheet.create({
   standbyBtn:   { backgroundColor: '#00E676', paddingVertical: 12, paddingHorizontal: 32, borderRadius: 10 },
   standbyTxt:   { color: '#FFF', fontWeight: '700', fontSize: 14 },
 });
-
-// Premium Navy Custom Map Style for an ultra premium, rich neon tactical look
-const PREMIUM_NAVY_MAP = [
-  { elementType: 'geometry', stylers: [{ color: '#12131C' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8E91A1' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#12131C' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#23263B' }] },
-  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#161722' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1D1E2D' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#282B3E' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3B3F5B' }] },
-  { featureType: 'road.highway.controlled_access', elementType: 'geometry', stylers: [{ color: '#4A4E70' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0B0C10' }] }
-];

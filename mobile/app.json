@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "CIRO",
+    "slug": "ciro-pk",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.ciro.emergency",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0A"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDlLs17SyRzlHIMc2ap-14btF3hEnuy6sU"
+        }
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
