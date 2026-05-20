@@ -9,7 +9,12 @@ import http from 'http';
 import { Server } from 'socket.io';
 import { Orchestrator } from './services/orchestrator.js';
 
+import Groq from 'groq-sdk';
+import cron from 'node-cron';
+import { savePushToken, sendHeatwaveNotification, getTokenCount, setSocketEmitter } from './services/notificationService.js';
+
 dotenv.config();
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +25,9 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' }
 });
+
+// Configure the notification service to broadcast events over WebSocket
+setSocketEmitter((event, payload) => io.emit(event, payload));
 
 app.use(cors());
 app.use(express.json());
@@ -165,19 +173,47 @@ async function readDataFile(filename) {
 }
 
 // 1. POST /api/crisis/analyze
-// Replaced by orchestrated flow, but kept for legacy/direct triggering if needed
 app.post('/api/crisis/analyze', async (req, res, next) => {
   try {
-    const { signals, weather_data } = req.body;
-    // Push directly to orchestrator
-    if (signals && Array.isArray(signals)) {
-      for (const sig of signals) {
-        orchestrator.handleNewSignal(sig);
-      }
+    const { text, temperature } = req.body;
+    
+    if (!text) {
+      return res.status(400).json({ success: false, error: 'Text prompt/signal is required.' });
     }
-    res.json({ message: 'Analysis triggered via Orchestrator' });
+
+    const systemPrompt = `You are the CIRO Antigravity Orchestrator. Analyze the crisis signal and respond with ONLY a valid JSON object:
+{
+  "orchestrator": { "decision": "string", "threshold_met": true/false, "routing": "NEAREST_HOSPITAL | LOAD_BALANCED | FASTEST_ROUTE" },
+  "detection": { "severity": "CRITICAL|HIGH|MEDIUM|LOW", "confidence": 85, "signals_fused": ["string","string"], "situation": "string" },
+  "planning": { "hospital": "string", "actions": ["string","string","string","string"], "alert_text": "string" },
+  "execution": { "steps": ["string","string","string","string"], "outcome": "string", "lives_impacted": 3 },
+  "affectedArea": "location name",
+  "coordinates": { "lat": 24.92, "lng": 67.09 },
+  "impactAreas": ["string","string","string"]
+}`;
+
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error('GROQ_API_KEY is not defined in backend configuration.');
+    }
+
+    const groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await groqClient.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Crisis Text: "${text}"\nCurrent Temperature: ${temperature !== undefined ? temperature : 'unknown'}°C` }
+      ],
+      temperature: 0.1
+    });
+
+    const reply = response.choices[0].message.content;
+    const cleanJson = reply.replace(/```json|```/g, '').trim();
+    const parsedJSON = JSON.parse(cleanJson);
+
+    res.json({ success: true, data: parsedJSON });
   } catch (error) {
-    next(error);
+    console.error('Crisis analysis endpoint error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -270,6 +306,44 @@ app.post('/api/signals/inject', async (req, res, next) => {
   }
 });
 
+// Proxy endpoint for mobile client Crisis Report Screen Claude calls
+app.post('/api/anthropic/proxy', async (req, res, next) => {
+  try {
+    const { model, system, messages, max_tokens } = req.body;
+    const userMsg = messages?.[0]?.content || '';
+
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error('GROQ_API_KEY environment variable is not defined.');
+    }
+
+    const groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await groqClient.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: system || 'You are a helpful assistant.' },
+        { role: 'user', content: userMsg }
+      ],
+      temperature: 0.2
+    });
+
+    const reply = response.choices[0].message.content;
+
+    // Return in Anthropic Messages API format
+    res.json({
+      content: [
+        {
+          type: 'text',
+          text: reply
+        }
+      ]
+    });
+  } catch (error) {
+    console.error('Anthropic proxy error:', error);
+    res.status(500).json({ error: 'Proxy failed', message: error.message });
+  }
+});
+
+
 // 5. GET /api/crisis/overview
 app.get('/api/crisis/overview', (req, res) => {
   const activeCrisesList = Array.from(globalActiveCrises.values());
@@ -307,6 +381,51 @@ app.get('/api/trace/:incident_id', (req, res) => {
     return res.status(404).json({ error: 'Trace not found for this incident' });
   }
   res.json({ antigravity_trace: trace });
+});
+
+// --- Push Notification Service API and Cron Job ---
+
+// A) POST /api/notifications/register
+app.post('/api/notifications/register', (req, res) => {
+  const { token, userId } = req.body;
+  savePushToken(token, userId);
+  res.json({ success: true, message: 'Token registered' });
+});
+
+// B) POST /api/notifications/test-send
+app.post('/api/notifications/test-send', async (req, res) => {
+  try {
+    await sendHeatwaveNotification(44, 'EXTREME');
+    res.json({ success: true, tokenCount: getTokenCount() });
+  } catch (err) {
+    console.error('[API Test Send] Error:', err);
+    res.status(500).json({ error: 'Failed to send notification', message: err.message });
+  }
+});
+
+// C) node-cron job running every 30 minutes
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    // Fetch Karachi weather (reuse existing weather service or fetch directly)
+    const weatherResponse = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?q=Karachi&appid=${process.env.OPENWEATHER_API_KEY}&units=metric`
+    );
+    const weatherData = await weatherResponse.json();
+    const temp = weatherData.main?.temp || 38.5;
+    
+    let condition = null;
+    if (temp >= 44) condition = 'EXTREME';
+    else if (temp >= 40) condition = 'HIGH';
+    
+    if (condition) {
+      await sendHeatwaveNotification(temp, condition);
+      console.log(`[CIRO Alerts] Sent heatwave notification: ${temp}°C (${condition})`);
+    } else {
+      console.log(`[CIRO Alerts] Temperature ${temp}°C — no alert needed`);
+    }
+  } catch (err) {
+    console.error('[CIRO Alerts] Cron job error:', err.message);
+  }
 });
 
 // Error handling middleware
