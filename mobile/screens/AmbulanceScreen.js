@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  Animated, Dimensions, ScrollView, ActivityIndicator
+  Animated, Dimensions, ScrollView, ActivityIndicator, PanResponder
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import io from 'socket.io-client';
@@ -93,6 +93,57 @@ export default function AmbulanceScreen({ navigation }) {
 
   const slideAnim = useRef(new Animated.Value(400)).current;
 
+  // Collapsible sheet logic
+  const [isMinimized, setIsMinimized] = useState(false);
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  const toggleSheet = () => {
+    const toVal = isMinimized ? 0 : 300;
+    Animated.spring(dragY, {
+      toValue: toVal,
+      useNativeDriver: true,
+      tension: 40,
+      friction: 8,
+    }).start(() => setIsMinimized(!isMinimized));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        let newY = gestureState.dy;
+        if (isMinimized) {
+          newY += 300;
+        }
+        if (newY < 0) newY = 0;
+        if (newY > 320) newY = 320;
+        dragY.setValue(newY);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const threshold = 150;
+        const currentY = isMinimized ? 300 + gestureState.dy : gestureState.dy;
+        if (currentY > threshold) {
+          Animated.spring(dragY, {
+            toValue: 300,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 8,
+          }).start(() => setIsMinimized(true));
+        } else {
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 8,
+          }).start(() => setIsMinimized(false));
+        }
+      },
+    })
+  ).current;
+
   // Pulse loops for UI
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const hospitalPulse = useRef(new Animated.Value(1)).current;
@@ -119,9 +170,20 @@ export default function AmbulanceScreen({ navigation }) {
 
       if (agent === 'Ambulance' && status === 'waiting_acceptance') {
         const routeInfo = data?.hospital_routing || {};
-        const name      = routeInfo.recommendation || 'Aga Khan University Hospital';
-        const incCoords = isValidCoordinate(data.incident_coords) ? data.incident_coords : { latitude: 24.92, longitude: 67.09 };
-        const hosCoords = isValidCoordinate(data.hospital_coords) ? data.hospital_coords : { latitude: 24.8765, longitude: 67.0689 };
+        const patientLat = data.patientLocation?.lat;
+        const patientLng = data.patientLocation?.lng;
+        const hospitalLat = data.hospitalLocation?.lat;
+        const hospitalLng = data.hospitalLocation?.lng;
+
+        const incCoords = (typeof patientLat === 'number' && typeof patientLng === 'number')
+          ? { latitude: patientLat, longitude: patientLng }
+          : (isValidCoordinate(data.incident_coords) ? data.incident_coords : { latitude: 24.92, longitude: 67.09 });
+
+        const hosCoords = (typeof hospitalLat === 'number' && typeof hospitalLng === 'number')
+          ? { latitude: hospitalLat, longitude: hospitalLng }
+          : (isValidCoordinate(data.hospital_coords) ? data.hospital_coords : { latitude: 24.8765, longitude: 67.0689 });
+
+        const name = data.hospitalLocation?.name || routeInfo.recommendation || 'Aga Khan University Hospital';
 
         // Initialize with direct fallback routes
         const initMission = {
@@ -129,8 +191,8 @@ export default function AmbulanceScreen({ navigation }) {
           status: 'pending',
           phase: STATES.DISPATCHED,
           hospitalName: name,
-          bedsAvailable: routeInfo.emergency_beds_available || 15,
-          incidentArea: data.incident_area || 'Unknown Area',
+          bedsAvailable: data.hospitalLocation?.beds || routeInfo.emergency_beds_available || 15,
+          incidentArea: data.patientLocation?.name || data.incident_area || 'Unknown Area',
           incidentCoords: incCoords,
           hospitalCoords: hosCoords,
           ambulancePos: hosCoords,
@@ -139,7 +201,8 @@ export default function AmbulanceScreen({ navigation }) {
           progress: 0,
           livesSecured: 0,
           patientRoute: [hosCoords, incCoords],
-          hospitalRoute: [incCoords, hosCoords]
+          hospitalRoute: [incCoords, hosCoords],
+          patientCount: data.patient_count || 1
         };
 
         setMissions(prev => ({
@@ -241,7 +304,7 @@ export default function AmbulanceScreen({ navigation }) {
            if(!prev[incId]) return prev;
            return {
               ...prev,
-              [incId]: { ...prev[incId], phase: STATES.COMPLETED, ambulancePos: position, livesSecured: 3 }
+              [incId]: { ...prev[incId], phase: STATES.COMPLETED, ambulancePos: position, livesSecured: prev[incId].patientCount || 1 }
            };
         });
       },
@@ -255,16 +318,18 @@ export default function AmbulanceScreen({ navigation }) {
   };
 
   const handleManualStatus = (incId, newPhase) => {
-    setMissions(prev => ({
-       ...prev,
-       [incId]: { ...prev[incId], phase: newPhase }
-    }));
+    setMissions(prev => {
+      const copy = { ...prev };
+      if (copy[incId]) {
+        copy[incId] = { ...copy[incId], phase: newPhase };
+        if (newPhase === STATES.COMPLETED) {
+          copy[incId].livesSecured = copy[incId].patientCount || 1;
+        }
+      }
+      return copy;
+    });
     if (newPhase === STATES.COMPLETED) {
       if (simRefs.current[incId]) simRefs.current[incId].stop();
-      setMissions(prev => ({
-         ...prev,
-         [incId]: { ...prev[incId], livesSecured: 3 }
-      }));
     }
   };
 
@@ -353,7 +418,7 @@ export default function AmbulanceScreen({ navigation }) {
 
                    {/* Incident marker */}
                    {isValidCoordinate(m.incidentCoords) && (
-                     <Marker coordinate={m.incidentCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                     <Marker coordinate={m.incidentCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4} title={m.incidentArea || "Patient Location"}>
                        {patientPickedUp ? (
                          <View style={[s.markerCircle, { backgroundColor: '#00E676' }]}>
                            <Ionicons name="checkmark" size={14} color="#FFF" />
@@ -370,7 +435,7 @@ export default function AmbulanceScreen({ navigation }) {
 
                    {/* Hospital marker */}
                    {isValidCoordinate(m.hospitalCoords) && (
-                     <Marker coordinate={m.hospitalCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4}>
+                     <Marker coordinate={m.hospitalCoords} anchor={{ x: 0.5, y: 0.5 }} opacity={isSelected ? 1 : 0.4} title={m.hospitalName || "Hospital Location"}>
                        {isNearHospital && !isPending ? (
                          <Animated.View style={[s.markerPulse, { transform: [{ scale: isSelected ? hospitalPulse : 1 }] }]}>
                            <View style={[s.markerCircle, { backgroundColor: '#00E676' }]}>
@@ -408,7 +473,17 @@ export default function AmbulanceScreen({ navigation }) {
       </View>
 
       {/* ── SLIDING BOTTOM SHEET ─────────────────────────────── */}
-      <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
+      <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }, { translateY: dragY }] }]}>
+        {/* Drag Handle Bar */}
+        <TouchableOpacity 
+          style={s.dragHandleContainer} 
+          onPress={toggleSheet} 
+          {...panResponder.panHandlers}
+          activeOpacity={0.9}
+        >
+          <View style={s.dragHandle} />
+        </TouchableOpacity>
+
         {missionKeys.length > 0 && (
            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 16, flexGrow: 0}}>
               {missionKeys.map(id => {
@@ -450,7 +525,7 @@ export default function AmbulanceScreen({ navigation }) {
               <View style={s.divider} />
 
               <View style={s.specGrid}>
-                <Text style={s.spec}>👥 Victims: <Text style={s.specVal}>3 Heatstroke</Text></Text>
+                <Text style={s.spec}>👥 Victims: <Text style={s.specVal}>{selectedMission.patientCount || 1} Heatstroke</Text></Text>
                 <Text style={s.spec}>🛏️ Beds: <Text style={[s.specVal, { color: '#00E676' }]}>{selectedMission.bedsAvailable} ✓</Text></Text>
                 <Text style={s.spec}>📏 Distance: <Text style={s.specVal}>~{(getDistanceKm(selectedMission.hospitalCoords, selectedMission.incidentCoords)).toFixed(1)} km</Text></Text>
                 <Text style={s.spec}>⏱️ ETA: <Text style={s.specVal}>~{Math.round((getDistanceKm(selectedMission.hospitalCoords, selectedMission.incidentCoords) / 40) * 60)} min</Text></Text>
@@ -520,7 +595,7 @@ export default function AmbulanceScreen({ navigation }) {
                <Text style={s.completeTitle}>✓ MISSION COMPLETE</Text>
                <Text style={s.livesText}>🫀 {selectedMission.livesSecured} Lives Secured</Text>
                <Text style={s.statRow}>Hospital: {selectedMission.hospitalName}</Text>
-               <Text style={s.statRow}>Patients Delivered: 3</Text>
+               <Text style={s.statRow}>Patients Delivered: {selectedMission.livesSecured || selectedMission.patientCount || 1}</Text>
                <Text style={s.statRow}>Beds Updated in System: ✓</Text>
                <TouchableOpacity style={[s.standbyBtn, {marginTop: 16}]} onPress={() => handleStandby(selectedMission.incidentId)}>
                  <Text style={s.standbyTxt}>Close & Return to Standby</Text>
@@ -547,7 +622,7 @@ export default function AmbulanceScreen({ navigation }) {
 // ── STYLES ─────────────────────────────────────────────────
 const s = StyleSheet.create({
   root:         { flex: 1, backgroundColor: '#090A0E' },
-  mapWrap:      { height: SCREEN_HEIGHT * 0.62, position: 'relative' },
+  mapWrap:      { ...StyleSheet.absoluteFillObject },
   map:          { flex: 1 },
   headerChip:   {
     position: 'absolute', top: 48, alignSelf: 'center',
@@ -574,7 +649,19 @@ const s = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: '#11121A', borderTopLeftRadius: 22,
     borderTopRightRadius: 22, borderWidth: 1, borderColor: '#23263B',
-    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 30,
+    paddingHorizontal: 20, paddingTop: 6, paddingBottom: 30,
+  },
+  dragHandleContainer: {
+    width: '100%',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dragHandle: {
+    width: 50,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#2E324A',
   },
   tabBtn: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#1A1C28', borderRadius: 8, marginRight: 10, borderWidth: 1, borderColor: '#2E324A' },
   tabBtnActive: { borderColor: '#FF6F00', backgroundColor: '#3A2612' },
