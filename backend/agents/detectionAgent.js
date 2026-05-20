@@ -4,14 +4,16 @@ dotenv.config()
 
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
-export async function runDetectionAgent(signals, weatherData, currentTime, intent = 'unknown') {
+export async function runDetectionAgent(signals, weatherData, currentTime, intent = 'unknown', patientCount = 1) {
   const prompt = `
 Current Time: ${currentTime}
 Weather Data: ${JSON.stringify(weatherData, null, 2)}
 Social Media Signals: ${JSON.stringify(signals, null, 2)}
 Classified Intent: ${intent}
+Required Patient Count: ${patientCount}
 
 Analyze all inputs and return ONLY this JSON, no extra text:
+IMPORTANT: You MUST set the "estimated_affected_people" field to exactly ${patientCount}.
 {
   "crisis_detected": true,
   "crisis_type": "${intent === 'unknown' ? 'heatwave' : intent}",
@@ -20,7 +22,7 @@ Analyze all inputs and return ONLY this JSON, no extra text:
   "confidence": 88,
   "vulnerable_groups": ["elderly"],
   "reasoning": "explanation here",
-  "estimated_affected_people": 150
+  "estimated_affected_people": ${patientCount}
 }`;
 
   const systemPrompt = `You are CIRO's Crisis Detection Specialist — an expert AI analyst deployed for Karachi, Pakistan's emergency response orchestration system.
@@ -78,5 +80,7 @@ OUTPUT RULES:
 
   const text = response.choices[0].message.content
   const clean = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(clean)
+  const result = JSON.parse(clean);
+  result.estimated_affected_people = patientCount;
+  return result;
 }
