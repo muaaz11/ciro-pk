@@ -1,55 +1,85 @@
-# CIRO: Crisis Intelligence & Response Orchestrator 🚨
+# 🚨 CIRO — Crisis Intelligence & Response Orchestrator
 ### Google Antigravity Hackathon — Challenge 3: Real-Time Crisis Orchestration
+
+An AI-driven, multi-agent emergency response and coordination system designed to combat severe heatwave crises and coordinate physical emergency dispatch routing in Karachi, Pakistan.
+
+---
+
+## Table of Contents
+
+1. [Project Overview](#1-project-overview)
+2. [Problem Statement](#2-problem-statement)
+3. [System Architecture](#3-system-architecture)
+4. [Google Antigravity Integration](#4-google-antigravity-integration)
+5. [Agent Workflow & Decision Engine](#5-agent-workflow--decision-engine)
+6. [Tech Stack & Dependencies](#6-tech-stack--dependencies)
+7. [APIs & External Services](#7-apis--external-services)
+8. [Setup & Installation](#8-setup--installation)
+9. [Environment Variables](#9-environment-variables)
+10. [Baseline Comparison](#10-baseline-comparison)
+11. [Robustness & Edge Cases](#11-robustness--edge-cases)
+12. [Cost & Latency Analysis](#12-cost--latency-analysis)
+13. [Scalability Design](#13-scalability-design)
+14. [Privacy & Safety Guidelines](#14-privacy--safety-guidelines)
+15. [Assumptions & Limitations](#15-assumptions--limitations)
+16. [Team Roles](#16-team-roles)
 
 ---
 
 ## 1. Project Overview
-**CIRO (Crisis Intelligence & Response Orchestrator)** is a next-generation, AI-driven emergency response and coordination system built to combat severe heatwave crises in Karachi, Pakistan. 
 
-CIRO acts as a real-time, automated command center that:
-1. **Fuses Multi-Source Social & Environmental Signals**: Collects and correlates raw citizen reports, social posts, and live meteorological data to detect emerging heatwave hotspots.
-2. **Dynamically Manages Crisis Lifecycles**: Leverages an intelligent Multi-Agent Orchestrator to assess severity, screen out false alarms, and formulate a targeted response plan.
-3. **Optimizes Hospital Load Balancing**: Automatically coordinates emergency ward bed availability in real-time, matching casualties with nearby hospitals that have vacant beds, bypassing overloaded clinics.
-4. **Validates Human-in-the-Loop Dispatch**: Relies on mobile driver client acceptance and physical check-in phases to maintain human oversight of simulated autonomous ambulance routing.
-5. **Renders Dynamic Street-Snapped Tracking**: Maps physical routes via the OSRM (Open Source Routing Machine) network API, giving dispatchers and drivers actual street-by-street visual tracking instead of standard straight-line interpolation.
+**CIRO (Crisis Intelligence & Response Orchestrator)** is a next-generation, AI-driven emergency response and coordination system built to address severe heatwave crises in Karachi, Pakistan. It acts as an automated, real-time command center that:
+
+| Capability | Description |
+|---|---|
+| 🔍 **Multi-Source Signal Fusion** | Collects and correlates citizen reports, social posts, and live meteorological data to detect emerging heatwave hotspots. |
+| 📍 **Geocoded Landmark Override** | Extracts written landmarks (e.g. "DHA Suffa") in Roman Urdu/English and geocodes them to coordinates to override raw GPS fallbacks. |
+| 👥 **Dynamic Patient Count Tracking** | Automatically identifies the number of affected casualties in citizen text feeds and propagates this count through database records and agent decisions. |
+| 🤖 **AI-Driven Crisis Lifecycle Management** | Uses a Multi-Agent Orchestrator to assess severity, screen false alarms, and formulate targeted response plans. |
+| 🏥 **Hospital Capacity Load Balancing** | Automatically coordinates emergency ward bed availability in real-time, matching and booking hospital beds based on incident patient counts. |
+| 👤 **Human-in-the-Loop Dispatch** | Relies on mobile driver acceptance and physical check-in phases to maintain human oversight of ambulance routing. |
+| 🗺️ **Street-Snapped Route Tracking** | Maps physical routes via OSRM (Open Source Routing Machine) in Midnight Navy style, providing actual street-by-street visual tracking. |
 
 ---
 
-## 2. Problem Statement: The Karachi Heatwave Crisis
-Karachi, a dense megacity of over 20 million residents, is heavily susceptible to extreme heat index spikes. During the catastrophic **2015 Karachi Heatwave**, temperatures soared to **49°C (120°F)**, leading to **over 1,500 direct heat-related fatalities** and swamping local medical infrastructure.
+## 2. Problem Statement: The Karachi Heatwave Crisis (Challenge 3)
 
-Analysis of the 2015 tragedy identified three systemic emergency response failures:
-* **Detection Lag**: Social media channels and emergency hotlines were inundated with fragmented crisis signals, but there was no central mechanism to fuse them and identify regional heatstroke hotspots before hospitals collapsed.
-* **Hospital Bed Overloading**: Ambulances automatically rushed patients to a few central medical centers (like JPMC or Civil Hospital), creating severe bottlenecks, while other well-equipped hospitals remained under-utilized.
-* **Coordinative Communication Gaps**: Traditional dispatches relied on uncoordinated analog radios, resulting in delayed alerts, straight-line navigation errors, and poor situational status updates.
+Karachi, a dense megacity of over **20 million residents**, is heavily susceptible to extreme heat index spikes. During severe heatwaves, temperatures can soar to extreme heights (such as 49°C / 120°F in 2015), causing direct heat-related fatalities and swamping local medical infrastructure.
 
-**CIRO directly resolves these bottlenecks** by orchestrating rapid AI detection, closed-loop hospital allocation, and street-snapped, real-time driver tracking.
+Analysis of traditional emergency coordination identified three systemic failures:
+
+* **Detection Lag**: Social media channels and emergency hotlines are inundated with fragmented crisis signals, but there is no central mechanism to fuse them and identify regional heatstroke hotspots before hospitals collapse.
+* **Hospital Bed Overloading**: Ambulances automatically rush patients to a few central medical centers, creating severe bottlenecks, while other well-equipped hospitals remain under-utilized.
+* **Coordinative Communication Gaps & GPS Failures**: Traditional dispatches rely on uncoordinated analog radios or raw cell tower GPS fallbacks, resulting in delayed dispatches, straight-line navigation errors, and poor situational status updates.
+
+**CIRO directly resolves these bottlenecks** by orchestrating rapid AI detection, geocoded landmark resolution, closed-loop hospital allocation matching casualty count requirements, and street-snapped real-time driver tracking.
 
 ---
 
 ## 3. System Architecture
+
 CIRO operates a fully decoupled, real-time event-driven architecture powered by WebSockets, REST, and stateful multi-agent execution lanes.
 
 ```
-                  ┌──────────────────────────────────────────────┐
-                  │          MULTIPLE EMERGENCY SIGNALS          │
-                  │   - Citizen Social Posts (Roman Urdu/Urdu)   │
-                  │   - OpenWeatherMap Meteorological API        │
-                  │   - Real-Time Hospital Bed Registers         │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                                         ▼
-                  ┌──────────────────────────────────────────────┐
-                  │         REST API / SIGNAL INGESTION          │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                                         ▼
-      ┌──────────────────────────────────────────────────────────────────────┐
-      │             GOOGLE ANTIGRAVITY BRAIN LAYER (ORCHESTRATOR)            │
-      │                                                                      │
-      │   - Screens 38°C Heat Threshold   - Instantiates Custom Lifecycles   │
-      │   - Governs Confidence Bounds    - Allocates Tool Access Tokens     │
-      └───────┬──────────────────────────┬───────────────────────────┬───────┘
+              ┌──────────────────────────────────────────────┐
+              │          MULTIPLE EMERGENCY SIGNALS          │
+              │   - Citizen Social/Voice Posts (Roman Urdu)  │
+              │   - OpenWeatherMap Meteorological API        │
+              │   - Real-Time Hospital Bed Registers         │
+              └──────────────────────┬───────────────────────┘
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────┐
+              │         REST API / SIGNAL INGESTION          │
+              └──────────────────────┬───────────────────────┘
+                                     │
+                                     ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │             GOOGLE ANTIGRAVITY BRAIN LAYER (ORCHESTRATOR)            │
+  │                                                                      │
+  │   - Screens 38°C Heat Threshold   - Instantiates Custom Lifecycles   │
+  │   - Governs Confidence Bounds    - Allocates Tool Access Tokens     │
+  └───────┬──────────────────────────┬───────────────────────────┬───────┘
               │                          │                           │
               ▼                          ▼                           ▼
     ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
@@ -77,140 +107,108 @@ CIRO operates a fully decoupled, real-time event-driven architecture powered by 
                   ┌────────────────────────┐    ┌────────────────────────┐
                   │ MOBILE CLIENT (TRACE)  │    │ MOBILE DRIVER (MAP)    │
                   │ Horizontal Tab Switch  │    │ Midnight Navy Theme,   │
-                  │ Dynamic Reasoning Logs │    │ Street-snapped Route   │
+                  │ Dynamic Reasoning Logs │    │ Draggable Driver Hub   │
                   └────────────────────────┘    └────────────────────────┘
 ```
 
 ---
 
-## 4. How Google Antigravity Is Used
-The **Google Antigravity Brain Layer** serves as the central control plane (the master orchestrator) of the entire emergency response backend. Instead of executing isolated LLM chats, Antigravity functions as a stateful, deterministic, and highly rational gateway that:
-* **Analyzes Complex Ingested Inputs**: Takes weather statistics, temperature values, and social distress feeds simultaneously.
-* **Dynamically Configures the Workflow**: Determines whether downstream agents (`Detection`, `Planning`, `Execution`) should run based on the severity level. If severity is marked `CRITICAL`, it automatically injects an `emergency_escalation` step into the pipeline.
-* **Governs Tool Access Tokens**: Evaluates the crisis context to restrict tool access logically. Maps are unlocked only for location-based threats; public alert broadcasts are authorized only if mass safety is compromised.
-* **Establishes Dynamic Routing Priorities**: Selects the optimal dispatch routing strategy (e.g. `NEAREST_HOSPITAL`, `FASTEST_ROUTE`, `LOAD_BALANCED`) dynamically based on real-time traffic and hospital bed availability.
+## 4. Google Antigravity Integration
 
----
+The **Google Antigravity Brain Layer** serves as the central control plane (master orchestrator) of the entire emergency response backend. Instead of isolated LLM chats, Antigravity functions as a stateful, deterministic, and highly rational gateway that:
 
-## 5. Agent Workflow
-CIRO utilizes three key operational agents to handle the crisis lifecycle:
+* **Analyzes Complex Ingested Inputs** — Takes weather statistics, temperature values, and social distress feeds simultaneously.
+* **Dynamically Configures the Workflow** — Determines whether downstream agents (`Detection`, `Planning`, `Execution`) should run based on severity level. If severity is `CRITICAL`, it automatically injects an `emergency_escalation` step into the pipeline.
+* **Governs Tool Access Tokens** — Evaluates the crisis context to restrict tool access logically. Maps are unlocked only for location-based threats; public alert broadcasts are authorized only if mass safety is compromised.
+* **Establishes Dynamic Routing Priorities** — Selects the optimal dispatch routing strategy (`NEAREST_HOSPITAL`, `FASTEST_ROUTE`, `LOAD_BALANCED`) dynamically based on real-time traffic and hospital bed availability.
 
-```mermaid
-graph TD
-    A[Raw Ingestion Signal] --> B[Antigravity Orchestrator]
-    B -->|Temp >= 38°C| C[Detection Agent]
-    B -->|Temp < 38°C| D[False Alarm: Logged & Ignored]
-    C -->|High Confidence & Severity| E[Planning Agent]
-    E -->|Hospital Beds Loaded| F[Human-in-the-Loop Approval]
-    F -->|Accepted| G[Execution Agent]
-    G --> H[Dynamic Ambulance Route Simulation]
-    H --> I[Prisma DB Closeout & Incident Report]
+### Antigravity Decision Logic
+
+```
+Temperature ≥ 38°C?
+      │
+      ├─── NO  ──► Log as false alarm, abort agents
+      │
+      └─── YES ──► Run Detection Agent
+                        │
+                        ├─── Confidence < 60% ──► Mark as 'unverified', deny dispatch
+                        │
+                        └─── Confidence ≥ 60% ──► Run Planning Agent
+                                                       │
+                                                       └──► Human-in-the-Loop Approval
+                                                                 │
+                                                                 └──► Run Execution Agent
 ```
 
-### I. Detection Agent
-* **Role**: Situational Awareness & Ingestion Correlation.
-* **Mechanism**: Takes incoming citizen social posts (in Urdu, Roman Urdu, or English) alongside weather temperature registers. It performs semantic analysis, identifies heatstroke or heat exhaustion tokens, filters out background noise, and computes a **Severity Rating (LOW, MEDIUM, HIGH, CRITICAL)** and a **Confidence Score (0-100%)**.
+---
 
-### II. Planning Agent
-* **Role**: Operational Logistics & Resource Allocation.
-* **Mechanism**: Bypasses crowded emergency rooms. It reads the local Karachi hospital database, extracts active bed registers, and matches the casualty's location with the nearest high-capacity, under-utilized clinic. Concurrently, it drafts a precise coordination plan and generates localized, multilingual emergency alert broadcasts in **English, Urdu, and Roman Urdu**.
+## 5. Agent Workflow & Decision Engine
 
-### III. Execution Agent
-* **Role**: Safe Simulation Delivery & Report Closeout.
-* **Mechanism**: Traces driver response check-ins, tracks real-time ambulance telematics along OSRM street-snapped coordinates, measures countdown thresholds, increments lives secured, and persists the full audit trail into PostgreSQL, outputting an official, human-readable Incident Report.
+CIRO uses four key operational agents to handle the crisis lifecycle:
+
+* **Location & Patient Extractor Agent**:
+  * **Trigger**: Invoked upon receiving any raw signal payload.
+  * **Processing**: Uses LLM logic to parse mentioned landmark names (e.g. "DHA Suffa") and the number of affected casualties (`patient_count`).
+  * **Action**: Invokes the Google Geocoding API, targeting the Karachi bounding region. It overrides the fallback coordinates if a landmark is successfully resolved.
+* **Detection Agent**:
+  * **Trigger**: Activated by the Orchestrator after checking the meteorological temperature gate.
+  * **Processing**: Correlates the signal text and environmental factors, establishing a severity rating (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) and confidence metrics.
+  * **Action**: Assigns the extracted patient count to the `estimated_affected_people` field of the incident state.
+* **Planning Agent**:
+  * **Trigger**: Invoked if the Detection Agent verifies the incident with high severity and a confidence rating ≥ 60%.
+  * **Processing**: Matches the geocoded coordinates with the nearest hospital using Google Places API (v1 Nearby Search), ensuring that the hospital has enough simulated vacant beds to handle the extracted patient count.
+  * **Action**: Allocates the hospital bed reservation and generates multilingual safety advisories (English, Urdu, Roman Urdu).
+* **Execution Agent**:
+  * **Trigger**: Resumes once a driver manually accepts the dispatch via the mobile client.
+  * **Processing**: Simulates the transport transitions (`EN_ROUTE_TO_PATIENT`, `ARRIVED_AT_PATIENT`, `TRANSPORTING_PATIENT`, `COMPLETED`).
+  * **Action**: Records the simulated telemetry, updates hospital bed occupancy registers, increments total lives secured, and persists the final incident report to PostgreSQL.
 
 ---
 
-## 6. Tech Stack
-* **Mobile App (Mandatory)**: React Native + Expo (compiled with EAS Build, structured navigation).
+## 6. Tech Stack & Dependencies
+
+* **Frontend**: React Native + Expo (compiled with EAS Build, using custom Midnight Navy styling, React Native Maps, Animated API gestures, and PanResponders for the draggable collapsible info panel).
 * **Backend Framework**: Node.js + Express (ESM modular execution).
-* **Real-time WebSockets**: Socket.io (high-throughput parallel event loops).
+* **Real-time WebSockets**: Socket.io (high-throughput event loops).
 * **Relational Database**: PostgreSQL (Neon Serverless cloud instance).
-* **Object-Relational Mapping (ORM)**: Prisma ORM (seamless model synchronization and migrations).
+* **Object-Relational Mapping (ORM)**: Prisma ORM (model synchronization and database migrations).
 * **AI Model Engine**: Groq SDK (Llama 3.3 70B Versatile model for sub-second agent inferences).
-* **Maps rendering**: React Native Maps (native Google Maps integration).
 
 ---
 
-## 7. APIs and Tools Used
-* **OSRM Routing Engine (Open Source Routing Machine)**: Fetches street-level routing coordinates matching Karachi's physical road networks dynamically.
-* **OpenWeatherMap API**: Queries live temperature, heat index, wind velocity, and humidity levels for Karachi.
-* **Expo Vector Icons / Google Fonts (Inter / Outfit)**: Delivers a clean, legible, premium mobile typography and iconography experience.
+## 7. APIs & External Services Used
+
+### Real APIs
+* **Google Places Nearby Search API (v1)**: Matches coordinates to nearby medical centers, utilizing field-masking headers (`X-Goog-FieldMask`) to request only target displays, coordinates, formatting addresses, and IDs, saving network bandwidth.
+* **Google Geocoding API**: Resolves written landmarks (in English/Roman Urdu) in citizen reports to precise coordinate structures.
+* **OSRM (Open Source Routing Machine) API**: Fetches route matrices to plot street-snapped coordinates on the ambulance map interface.
+* **OpenWeatherMap API**: Retrieves real-time temperature, wind index, and humidity values for Karachi.
+* **Groq SDK (Llama 3.3 70B)**: Serves all multi-agent prompt requests, intent classification, and geocoding extraction queries.
+
+### Mock APIs
+* **Signal Injection API (`/api/signals/inject`)**: Simulates incoming citizen reports, accepting raw text inputs, types, mock temperatures, and geographic parameters.
+* **Crisis Overview API (`/api/crisis/overview`)**: Aggregates incident counts and system health metrics for the dashboard.
+* **Weather Proxy (`/api/weather/current`)**: Serves local weather parameters with a static average fallback of **38.5°C** if the real API goes offline.
 
 ---
 
-## 8. Data Stream Schemas
-
-### I. Ingested Signal Schema
-```json
-{
-  "incidentId": "INC-1779143113624",
-  "temperature": 42.5,
-  "humidity": 68,
-  "citizenReport": "Mera bhai garmi se behosh hogaya hai Clifton k kareeb, bohot tez dhoop hai aur koi saaya nahi hai yahan!",
-  "timestamp": "2026-05-19T04:45:00Z"
-}
-```
-
-### II. Hospital Data Model (Prisma Database Schema)
-```prisma
-model Hospital {
-  id               String   @id @default(uuid())
-  name             String   @unique
-  latitude         Float
-  longitude        Float
-  emergencyBeds    Int
-  occupiedBeds     Int
-  createdAt        DateTime @default(now())
-}
-```
-
-### III. Incident State Schema
-```json
-{
-  "incidentId": "INC-1779143113624",
-  "status": "active",
-  "severity": "HIGH",
-  "confidence": 92,
-  "assignedHospital": "South City Hospital",
-  "pickupCoords": { "latitude": 24.8123, "longitude": 67.0345 },
-  "dropoffCoords": { "latitude": 24.8211, "longitude": 67.0398 },
-  "phase": "EN_ROUTE_TO_PATIENT",
-  "livesSecured": 0,
-  "timestamp": "2026-05-19T04:45:30Z"
-}
-```
-
----
-
-## 9. Setup Instructions
-
-### Prerequisites
-- Node.js (v18.0.0 or higher)
-- PostgreSQL database credentials (or a free Neon PostgreSQL cloud database URL)
-- Groq API Key (for Llama model queries)
+## 8. Setup & Installation
 
 ### I. Backend Setup
-1. Clone the repository and navigate to the backend directory:
+1. Navigate to the backend directory:
    ```bash
    cd backend
    ```
-2. Install all packaged dependencies:
+2. Install packaged dependencies:
    ```bash
    npm install
    ```
-3. Create a `.env` configuration file in the `/backend` folder:
-   ```env
-   PORT=4000
-   DATABASE_URL="postgresql://username:password@ep-neon-host.neon.tech/ciro_db?sslmode=require"
-   GROQ_API_KEY="gsk_your_groq_api_key_goes_here"
-   OPENWEATHER_API_KEY="your_openweathermap_key"
-   ```
-4. Run the Prisma migrations to initialize the database:
+3. Set up your `.env` configuration file inside `/backend` (refer to environment variables).
+4. Run the database migration schemas:
    ```bash
    npx prisma db push
    ```
-5. Spin up the production/development backend:
+5. Start the development server:
    ```bash
    npm run dev
    ```
@@ -220,116 +218,102 @@ model Hospital {
    ```bash
    cd ../mobile
    ```
-2. Install the necessary Expo dependencies:
+2. Install Expo and React Native dependencies:
    ```bash
    npm install
    ```
-3. Create an `.env.local` or edit `mobile/url.js` to point to your backend URL:
-   ```javascript
-   export const app_url = 'http://localhost:4000'; // or local network IP for mobile device testing
-   ```
-4. Start the Expo development server:
+3. Update `mobile/url.js` to point to your local network IP (e.g., `http://192.168.1.10:4000`) or local port configuration.
+4. Launch the Expo bundler:
    ```bash
    npx expo start
    ```
+5. Scan the generated QR code using your mobile device running Expo Go.
 
 ---
 
-## 10. How to Run Demo
+## 9. Environment Variables
 
-### Step 1: Fire Parallel Signals
-1. Launch both the backend server and the mobile Expo client.
-2. In the mobile client, tap **Trigger Rapid Crisis**. This immediately fires two parallel emergency signals (Simulating Heatstroke signals at 42°C and 45°C) to the backend.
+Create a `backend/.env` file with the following variables:
+```env
+# Server configuration
+PORT=4000
 
-### Step 2: Observe Multi-Incident Agent Reasoning
-1. Open the **Agent Trace Screen** on the mobile app.
-2. The UI renders dynamic horizontal tabs representing both active incidents (e.g. `INC-1779143113624` and `INC-1779143113633`).
-3. Tap between the tabs to instantly switch between the live, multi-threaded reasoning logs as `Antigravity`, `Detection`, `Planning`, and `Execution` process the events in parallel.
+# PostgreSQL Neon Serverless connection
+DATABASE_URL="postgresql://username:password@ep-neon-host.neon.tech/ciro_db?sslmode=require"
 
-### Step 3: Accept Dispatches & Track Street-Snapped Routes
-1. Navigate to the **Ambulance Screen**.
-2. Tap the horizontally scrollable tabs to view both pending dispatches.
-3. Tap **Accept Dispatch** on a pending emergency card.
-4. Watch the map seamlessly transition to the custom-styled Midnight Navy neon interface. The ambulance will start moving along the actual street layouts of Karachi, curving around intersections, heading to the patient (`patientRoute` in cyan), and then transporting them dynamically back to the hospital (`hospitalRoute` in green).
-
----
-
-## 11. Baseline Comparison Table
-
-| Metric | Manual Dispatch System (Baseline) | CIRO Orchestrated System (Antigravity) | Improvement Factor |
-| :--- | :--- | :--- | :--- |
-| **Response Latency** | 12 - 25 Minutes | **Sub-Second Inferences + 1.2s API Fuses** | **~90x Faster Ingestion** |
-| **Hospital Selection** | Blindly routing to the largest public hospitals (JPMC / Civil). | **AI-driven dynamic load balancing** based on vacant emergency room beds. | **Eliminates ER bottlenecks entirely** |
-| **Routing Protocol** | Static GPS or manual driver maps (straight-line estimation). | **OSRM Street-Snapped Navigation** routing through Karachi's road matrix. | **Saves vital minutes in transit** |
-| **Public Alert Dispatches**| Delayed static sirens or radio broadcasts in one language. | **Dynamic, multi-lingual alerts** (Urdu, Roman Urdu, English) triggered on-the-fly. | **Broader mass reach, instantly** |
-| **Multi-Incident Ingestion**| Serial operator calls, queue bottlenecks, single queue pipeline. | **Asynchronous Map-based parallel event handling** mapped by incident IDs. | **100% concurrent concurrency** |
+# API Keys
+GROQ_API_KEY="your_groq_api_key"
+GOOGLE_MAPS_API_KEY="your_google_maps_api_key"
+OPENWEATHER_API_KEY="your_openweathermap_api_key"
+```
 
 ---
 
-## 12. Robustness and Edge Cases
+## 10. Baseline Comparison
 
-### I. Meteorological Threshold Screening (38°C Cutoff)
-CIRO implements a strict physical temperature gate. If a citizen signals a "heat crisis" but the weather temperature reading is **below 38°C**, the Antigravity Orchestrator identifies it as a false alarm, logs the entry into PostgreSQL as a non-crisis event, and aborts downstream agent runs to preserve system resources.
-
-### II. API Failure Fallbacks
-If the OpenWeatherMap API goes down or hits a rate limit, CIRO immediately injects a safe meteorological average fallback value of **38.5°C** to prevent system lockouts and guarantee that emergency dispatches continue.
-
-### III. OSRM Routing Offline Fallback
-If the public OSRM street-routing API is offline or returns an empty route, `ambulanceSimulation.js` automatically catches the exception, constructs a straight-line vector between coordinates, and continues simulating smoothly without crashing the mobile app or backend event loops.
-
-### IV. Low Confidence Mitigation
-If the Detection Agent outputs a confidence score of **less than 60%**, the Antigravity Orchestrator immediately marks the incident as `unverified` and denies `run_execution` authorization, preventing accidental physical dispatches of precious ambulance resources on weak or malicious signals.
+| Metric | Manual Dispatch System (Baseline) | CIRO Orchestrated System | Improvement |
+|:---|:---|:---|:---|
+| **Response Latency** | 12–25 minutes | Sub-second inferences + 1.2s API geocoding | **~90x Faster Ingestion** |
+| **Hospital Selection** | Blindly routing to largest public hospitals (JPMC/Civil) | AI-driven dynamic load balancing by vacant ER beds | **Eliminates ER bottlenecks** |
+| **Routing Protocol** | Static GPS or manual maps (straight-line estimation) | OSRM street-snapped navigation through Karachi's road matrix | **Saves vital transit time** |
+| **Public Alert Dispatches** | Delayed static sirens or radio broadcasts (one language) | Dynamic multilingual alerts (Urdu, Roman Urdu, English) | **Broader reach, instantly** |
+| **Multi-Incident Ingestion** | Serial operator calls, single queue pipeline | Asynchronous map-based parallel event handling by incident ID | **100% concurrent concurrency** |
 
 ---
 
-## 13. Cost and Latency Analysis
+## 11. Robustness & Edge Cases
 
-### I. Cost Estimate Per Ingested Incident
-Using the Groq API (Llama 3.3 70B model) at typical token counts:
-- **Detection Agent Prompt**: ~1,200 tokens
-- **Planning Agent Prompt**: ~1,500 tokens
-- **Antigravity Orchestration**: ~1,000 tokens
-- **Total Input Tokens**: ~3,700 tokens
-- **Total Output Tokens**: ~600 tokens
-- **Average Cost Per Operation**: **~$0.0022 USD** (extremely cost-effective compared to traditional emergency telephony setups).
-
-### II. Latency Benchmarks
-- **OpenWeather API Query**: ~150ms
-- **Antigravity Orchestrator Decision**: ~380ms
-- **Detection Agent Analysis**: ~410ms
-- **Planning Agent Resource Balance**: ~480ms
-- **OSRM Path Calculations**: ~180ms
-- **Total End-to-End Latency**: **~1.6 seconds** from a citizen's tap to driver mobile alert.
+* **Temperature Gate Threshold (38°C Cutoff)**: If a report indicates a heat crisis but weather readings are below 38°C, the Orchestrator classifies the event as a false alarm, writes it to PostgreSQL as aborted, and stops downstream agent processes.
+* **Geocoding & GPS Fallback bounds**: If Geocoding maps a landmark to coordinates outside Karachi bounds (latitude < 24.5 or > 25.5), CIRO overrides the location with a fallback coordinate: `{ lat: 24.92, lng: 67.09 }` (Gulshan Chowrangi, Karachi).
+* **OSRM Routing Offline Fallback**: If the OSRM route service fails, `ambulanceSimulation.js` creates a straight-line vector between coordinates to continue simulating coordinates without crashing.
+* **Low Confidence Mitigation**: If the Detection Agent confidence score is < 60%, the Antigravity Orchestrator blocks execution and prevents ambulance dispatch.
 
 ---
 
-## 14. Scalability Discussion
+## 12. Cost & Latency Analysis
 
-### Architecting for 10x Incident Volume (100 concurrent signals/sec)
-* **Horizontal scaling of Express servers** via load balancers (AWS ELB / Nginx).
-* **Redis Pub/Sub integration** to handle state synchronization between multiple Express server nodes and WebSocket mobile clients.
-* **Database Connection Pooling**: Transitioning from single Prisma connects to a dedicated connection pool manager like PgBouncer or Neon's native pooling endpoint.
-
-### Architecting for 100x Incident Volume (1,000+ concurrent signals/sec)
-* **Message Queue Pipelines**: Transitioning API signal inputs to an Apache Kafka or RabbitMQ ingestion queue to throttle and buffer heavy spikes in incoming citizen signals without dropping reports.
-* **Distributed Agent Workers**: Decoupling the LLM agent execution loops from the web server thread using standalone containerized worker nodes (Node.js or Python) subscribing to RabbitMQ tasks.
-* **Edge Caching**: Caching regional OSRM routes and OpenWeather data using Redis with a 2-minute time-to-live (TTL) to avoid redundant network roundtrips for nearby emergency signals.
-
----
-
-## 15. Privacy and Safety Note
-- **Geographic Data Safeguards**: Citizen locations are parsed solely within memory limits to calculate nearest-neighbor distances and generate dynamic routing arrays. GPS coordinates are stored in PostgreSQL under secure encryption keys, and public broadcast alerts sanitize individual citizen IDs to maintain privacy.
-- **Patient Privacy Boundaries**: Mock medical datasets (beds, casualty counts) do not include individual patient health histories or personal details.
-- **Dispatch Integrity**: All physical dispatches require Human-in-the-loop validation (manual driver acceptance) to ensure that emergency vehicles are not hijacked by automated scripts.
+* **Cost Estimate Per Ingested Incident**:
+  * Inputs and outputs using Groq Llama 3.3 total ~4,300 tokens per full run.
+  * Average cost per incident: **~$0.0022 USD**.
+* **End-to-End Latency**:
+  * Weather lookup: ~150ms
+  * Antigravity and agent decisions: ~1270ms
+  * OSRM routes: ~180ms
+  * Total average processing time: **~1.6 seconds** from signal submission to mobile driver notification.
 
 ---
 
-## 16. Assumptions and Limitations
-- **Mock Data Alignment**: Hospital bed capacity and citizen signal coordinates reflect actual coordinates and physical names in Karachi, but bed volumes are mocked for high-fidelity dispatch simulation.
-- **Hardware Dependencies**: The Mobile client assumes active Wi-Fi or cellular network capability. In major power blackouts or cellular deadzones, fallback offline SMS channels would be required (not current scope).
-- **GPS Drift**: Indoor GPS signals are assumed to be stable within 10 meters. Heavy high-rise areas in Karachi may cause slight map icon offset drifts.
+## 13. Scalability Design
+
+* **10x Scenario (100 concurrent signals/sec)**:
+  * Horizontal scaling of Node.js instances behind an Nginx load balancer.
+  * Redis Pub/Sub integration to handle state updates between WebSocket threads.
+  * Connection pooling configured through PgBouncer.
+* **100x Scenario (1,000+ concurrent signals/sec)**:
+  * Ingestion offloading using message brokers (Apache Kafka / RabbitMQ).
+  * Decoupling LLM execution loops to background task workers subscribing to Kafka queues.
+  * Caching OSRM route templates and Weather values using Redis with a 2-minute TTL.
 
 ---
 
-## 17. Team
-Proudly engineered for the **Google Antigravity Hackathon Challenge 3** as a state-of-the-art, high-fidelity demonstration of how autonomous Multi-Agent networks can secure human lives during climate emergencies.
+## 14. Privacy & Safety Guidelines
+
+* **Geographic Data Protection**: Coordinates are used solely within memory limits to calculate routes and nearby distances. Database values are stored under secure connection structures.
+* **Patient Privacy Boundaries**: Simulated databases map only numerical indicators (bed registers, casualty counts) and exclude personal patient identifying profiles or histories.
+* **Dispatch Validation**: Dispatches require manual Driver Hub approval, ensuring that autonomous simulation steps are not initiated without physical human confirmation.
+
+---
+
+## 15. Assumptions & Limitations
+
+* **Mock Hospital Data**: Hospital coordinate details match real coordinates, but bed capacities are mocked to validate the capacity matching and load-balancing algorithms.
+* **Network Reliability**: Assumes continuous Wi-Fi or cellular network capability. Major blackouts would require SMS fallbacks (out of scope).
+* **Urdu Translation Precision**: Voice reporting accuracy is bound to device-specific text-to-speech transcription engines.
+
+---
+
+## 16. Team Roles
+
+* **Muaaz Ilyas** — Lead Orchestration & AI Architect: Developed Google Antigravity configuration frameworks, multi-agent execution structures, intent classification, and metadata extraction pipelines.
+* **Irbaz Motan** — Backend & Database Engineer: Constructed Node.js Express REST routes, Socket.io WebSocket pipelines, Google Places API integrations, and database schemas via Prisma ORM.
+* **Faran Khalil** — Mobile UI & Experience Engineer: Designed the React Native Expo screens, Midnight Navy maps, PanResponder draggable bottom sheets, and voice reporting modules.
