@@ -9,12 +9,12 @@ export default ({ config }) => {
         slug: "Ciro_Emergency",
         version: "1.0.0",
         orientation: "portrait",
-        icon: "./assets/icon.jpeg",
+        icon: "./assets/icon.png",
         userInterfaceStyle: "dark",
         newArchEnabled: true,
 
         splash: {
-            image: "./assets/icon.jpeg",
+            image: "./assets/icon.png",
             resizeMode: "contain",
             backgroundColor: "#0A0A0A"
         },
@@ -31,7 +31,7 @@ export default ({ config }) => {
             package: "com.diverse.ciro",
             edgeToEdgeEnabled: true,
             adaptiveIcon: {
-                foregroundImage: "./assets/adaptive-icon.png",
+                foregroundImage: "./assets/icon.png",
                 backgroundColor: "#0A0A0A"
             },
             config: {
@@ -42,7 +42,7 @@ export default ({ config }) => {
         },
 
         web: {
-            favicon: "./assets/favicon.png"
+            favicon: "./assets/icon.png"
         },
 
         extra: {

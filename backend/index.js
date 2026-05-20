@@ -42,6 +42,11 @@ const globalTraces = new Map(); // [NEW] Track decision traces
 
 const originalEmit = io.emit;
 io.emit = function(eventName, payload) {
+  if (eventName === 'agent_status' && payload && payload.incidentId) {
+    const source = orchestrator.getLocationSource?.(payload.incidentId) || 'gps_fallback';
+    payload.locationSource = source;
+  }
+
   // Call original emit
   originalEmit.apply(io, arguments);
 

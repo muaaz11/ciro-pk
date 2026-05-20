@@ -3,6 +3,8 @@ import { runPlanningAgent } from '../agents/planningAgent.js';
 import { runExecutionAgent } from '../agents/executionAgent.js';
 import { runAntigravityAgent } from '../agents/antigravityAgent.js';
 import { classifySignalIntent } from '../agents/intentClassifier.js';
+import { extractLocationFromText } from './locationExtractor.js';
+import { findNearestAvailableHospital } from './hospitalService.js';
 import { pool } from '../database.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -40,6 +42,8 @@ export class SimulationEngine {
     const startCoords = executionPlan.hospital_coords || { latitude: 24.8945, longitude: 67.0768 };
     const destCoords = executionPlan.incident_coords || { latitude: 24.92, longitude: 67.09 };
     const hospitalName = executionPlan.hospital_name || "Liaquat National Hospital";
+    const patientLocation = executionPlan.patientLocation || { lat: destCoords.latitude, lng: destCoords.longitude, name: 'Incident Location' };
+    const hospitalLocation = executionPlan.hospitalLocation || { lat: startCoords.latitude, lng: startCoords.longitude, name: hospitalName, address: '' };
 
     this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'simulating' });
 
@@ -87,6 +91,8 @@ export class SimulationEngine {
         incident_position: destCoords,
         hospital_position: startCoords,
         hospital_name: hospitalName,
+        patientLocation,
+        hospitalLocation,
         // Multi-system layers
         hospital_load: hospitalLoad + '% Full',
         traffic_status: trafficStatus + '% Congestion',
@@ -105,6 +111,12 @@ export class Orchestrator {
     this.simulationEngine = new SimulationEngine(io);
     this.resolveDriverAcceptance = new Map();
     this.activePlans = new Map();
+    this.incidentLocations = new Map();
+  }
+
+  getLocationSource(incidentId) {
+    const loc = this.incidentLocations.get(incidentId);
+    return loc ? loc.source : 'gps_fallback';
   }
 
   syncActiveDispatch(socket) {
@@ -154,14 +166,32 @@ export class Orchestrator {
       const coolingCenters = await readDataFile('cooling_centers.json');
       const currentTime = new Date().toISOString();
 
+      const firstSignal = signalsToProcess[0] || {};
+
+      // Perform location extraction using LLM & Geocoding
+      const extracted = await extractLocationFromText(firstSignal.text);
+      const patientCount = extracted.patient_count || 1;
+
+      const fallbackLat = firstSignal.latitude || (firstSignal.location && firstSignal.location.latitude) || 24.92;
+      const fallbackLng = firstSignal.longitude || (firstSignal.location && firstSignal.location.longitude) || 67.09;
+      const fallbackName = firstSignal.location_mentioned || 'Reported Location';
+
+      const incidentLocation = extracted.found
+        ? { lat: extracted.lat, lng: extracted.lng, name: extracted.name, source: 'text_extraction' }
+        : { lat: fallbackLat, lng: fallbackLng, name: fallbackName, source: 'gps_fallback' };
+
+      // Cache the incident location mapping
+      this.incidentLocations.set(incidentId, incidentLocation);
+
+      // Overwrite raw coordinates/name for downstream execution/DB save
+      const incidentLat = incidentLocation.lat;
+      const incidentLng = incidentLocation.lng;
+      firstSignal.location_mentioned = incidentLocation.name;
+
       // Classify intent before running detection
       const intentResult = await classifySignalIntent(signalsToProcess);
       const intent = intentResult.intent;
       console.log(`[${incidentId}] Classified Intent: ${intent} (${intentResult.reasoning})`);
-
-      const firstSignal = signalsToProcess[0] || {};
-      const incidentLat = firstSignal.latitude || 24.92;
-      const incidentLng = firstSignal.longitude || 67.09;
 
       let weather = { temperature_celsius: 45, humidity_percent: 60 }; // Fallback Mock
       const mockSignal = signalsToProcess.find(s => s.mock_temperature !== undefined);
@@ -216,10 +246,11 @@ export class Orchestrator {
             severity: agDecision.severity_level || "LOW",
             confidence: 100,
             affected_areas: [],
-            reasoning: `The current temperature is ${weather.temperature_celsius}°C. A heatwave crisis requires temperatures of 38°C or higher. Any reported collapses are likely unrelated to weather. No escalation needed.`
+            reasoning: `The current temperature is ${weather.temperature_celsius}°C. A heatwave crisis requires temperatures of 38°C or higher. Any reported collapses are likely unrelated to weather. No escalation needed.`,
+            estimated_affected_people: patientCount
           };
         } else {
-          detection = await runDetectionAgent(signalsToProcess, weather, currentTime, intent);
+          detection = await runDetectionAgent(signalsToProcess, weather, currentTime, intent, patientCount);
           if (agDecision.severity_level) {
             detection.severity = agDecision.severity_level;
           }
@@ -240,26 +271,68 @@ export class Orchestrator {
         if (agDecision.run_planning) {
           await new Promise(r => setTimeout(r, 2500));
           this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'thinking' });
-          await new Promise(r => setTimeout(r, 14000)); // Paced perfectly to match the spoken speech dialogue!
-          plan = await runPlanningAgent(detection, hospitals, coolingCenters);
-          
-          const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || "Agakhan University Hospital";
-          const targetHospital = hospitals.find(h => h.name.toLowerCase().includes(targetHospitalName.toLowerCase())) || hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
+          // Run planning agent and hospital search in parallel to save time
+          const [planResult, confirmedHospital] = await Promise.all([
+            (async () => {
+              await new Promise(r => setTimeout(r, 14000)); // Paced to match spoken speech dialogue
+              return runPlanningAgent(detection, hospitals, coolingCenters, patientCount);
+            })(),
+            findNearestAvailableHospital(incidentLat, incidentLng, ({ event, hospital, distance, beds, address, lat, lng }) => {
+              this.io.emit('agent_status', { incidentId, agent: 'HospitalSearch', status: event, data: { hospital, distance, beds, address, lat, lng } });
+              console.log(`[${incidentId}] [HospitalSearch] ${event}: ${hospital || ''}`);
+            }, patientCount)
+          ]);
+          plan = planResult;
 
-          plan.hospital_coords = { latitude: targetHospital.lat, longitude: targetHospital.lng };
-          plan.hospital_name = targetHospital.name;
-          plan.incident_coords = { latitude: incidentLat, longitude: incidentLng };
-          plan.incident_area = firstSignal.location_mentioned || "Gulshan Chowrangi";
+          // Use confirmed Google Places hospital; fall back to planning agent recommendation
+          let hospitalCoords, hospitalName, hospitalAddress, hospitalBeds;
+          if (confirmedHospital) {
+            hospitalCoords   = { latitude: confirmedHospital.lat, longitude: confirmedHospital.lng };
+            hospitalName     = confirmedHospital.name;
+            hospitalAddress  = confirmedHospital.vicinity || '';
+            hospitalBeds     = confirmedHospital.emergencyBeds;
+          } else {
+            const targetHospitalName = plan.hospital_routing?.recommendation || plan.response_plan?.hospital_routing?.recommendation || 'Agakhan University Hospital';
+            const targetHospital = hospitals.find(h => h.name.toLowerCase().includes(targetHospitalName.toLowerCase())) || hospitals[1] || { lat: 24.8765, lng: 67.0689, name: 'Agakhan University Hospital' };
+            hospitalCoords  = { latitude: targetHospital.lat, longitude: targetHospital.lng };
+            hospitalName    = targetHospital.name;
+            hospitalAddress = '';
+            hospitalBeds    = 15;
+          }
+
+          plan.hospital_coords  = hospitalCoords;
+          plan.hospital_name    = hospitalName;
+          plan.incident_coords  = { latitude: incidentLat, longitude: incidentLng };
+          plan.incident_area    = firstSignal.location_mentioned || 'Gulshan Chowrangi';
+          // Structured location objects consumed by frontend map
+          plan.patientLocation  = { lat: incidentLat, lng: incidentLng, name: firstSignal.location_mentioned || 'Incident Location' };
+          plan.hospitalLocation = { lat: hospitalCoords.latitude, lng: hospitalCoords.longitude, name: hospitalName, address: hospitalAddress, beds: hospitalBeds };
+          plan.patient_count    = patientCount;
 
           this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'completed', data: plan });
         } else {
           this.io.emit('agent_status', { incidentId, agent: 'Planning', status: 'skipped' });
-          const targetHospital = hospitals[1] || { lat: 24.8765, lng: 67.0689, name: "Agakhan University Hospital" };
+          // Quick hospital lookup for skipped planning path
+          let confirmedHospital = null;
+          try {
+            confirmedHospital = await findNearestAvailableHospital(incidentLat, incidentLng, ({ event, hospital, distance, beds, address, lat, lng }) => {
+              this.io.emit('agent_status', { incidentId, agent: 'HospitalSearch', status: event, data: { hospital, distance, beds, address, lat, lng } });
+            }, patientCount);
+          } catch (e) {
+            console.error(`[${incidentId}] Hospital search error (skipped path):`, e.message);
+          }
+          const fallback = hospitals[1] || { lat: 24.8765, lng: 67.0689, name: 'Agakhan University Hospital' };
+          const hosLat  = confirmedHospital?.lat  ?? fallback.lat;
+          const hosLng  = confirmedHospital?.lng  ?? fallback.lng;
+          const hosName = confirmedHospital?.name ?? fallback.name;
           plan = {
-            hospital_coords: { latitude: targetHospital.lat, longitude: targetHospital.lng },
-            hospital_name: targetHospital.name,
-            incident_coords: { latitude: incidentLat, longitude: incidentLng },
-            incident_area: firstSignal.location_mentioned || "Unknown"
+            hospital_coords:  { latitude: hosLat, longitude: hosLng },
+            hospital_name:    hosName,
+            incident_coords:  { latitude: incidentLat, longitude: incidentLng },
+            incident_area:    firstSignal.location_mentioned || 'Unknown',
+            patientLocation:  { lat: incidentLat, lng: incidentLng, name: firstSignal.location_mentioned || 'Incident Location' },
+            hospitalLocation: { lat: hosLat, lng: hosLng, name: hosName, address: confirmedHospital?.vicinity || '', beds: confirmedHospital?.emergencyBeds || 15 },
+            patient_count:    patientCount
           };
         }
 
@@ -283,11 +356,14 @@ export class Orchestrator {
 
           this.io.emit('agent_status', { incidentId, agent: 'Execution', status: 'thinking' });
           await new Promise(r => setTimeout(r, 4500)); // Dramatic pacing for LLM generation
-          const execution = await runExecutionAgent(plan, hospitals, coolingCenters);
+          const execution = await runExecutionAgent(plan, hospitals, coolingCenters, patientCount);
 
           execution.incident_coords = plan.incident_coords;
           execution.hospital_coords = plan.hospital_coords;
           execution.hospital_name = plan.hospital_name;
+          execution.patientLocation = plan.patientLocation;
+          execution.hospitalLocation = plan.hospitalLocation;
+          execution.patient_count = patientCount;
 
           // Commencing simulation
           await new Promise(r => setTimeout(r, 1500));
